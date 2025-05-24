@@ -26,6 +26,7 @@
 	<modules>
 		<module>common-library</module>
 		<module>order-service</module>
+		<module>inventory-service</module>
 	</modules>
 
 	<dependencyManagement>

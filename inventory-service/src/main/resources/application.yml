@@ -1,0 +1,20 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: inventory-service
+  data:
+    mongodb:
+      uri: mongodb://mongodb:27017/inventory
+  kafka:
+    bootstrap-servers: kafka:9092
+    consumer:
+      auto-offset-reset: earliest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://service-registry:8761/eureka/
+  instance:
+    prefer-ip-address: true
