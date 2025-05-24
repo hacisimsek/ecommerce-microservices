@@ -10,7 +10,6 @@
 	</parent>
 
 	<artifactId>common-library</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
 	<name>common-library</name>
 	<description>common-library</description>
 
@@ -38,17 +37,4 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-				<configuration>
-					<skip>true</skip>
-				</configuration>
-			</plugin>
-		</plugins>
-	</build>
-
 </project>

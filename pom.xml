@@ -17,7 +17,7 @@
 
 	<properties>
 		<java.version>17</java.version>
-		<spring-cloud.version>2023.0.0</spring-cloud.version>
+		<spring-cloud.version>2023.0.2</spring-cloud.version>
 		<spring-kafka.version>3.1.2</spring-kafka.version>
 		<lombok.version>1.18.32</lombok.version>
 		<mapstruct.version>1.5.5.Final</mapstruct.version>
@@ -25,7 +25,7 @@
 
 	<modules>
 		<module>common-library</module>
-
+		<module>order-service</module>
 	</modules>
 
 	<dependencyManagement>

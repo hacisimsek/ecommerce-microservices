@@ -1,13 +1,13 @@
-package com.hacisimsek.commonlibrary;
+package com.hacisimsek.common;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class CommonLibraryApplication {
+public class CommonApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(CommonLibraryApplication.class, args);
+		SpringApplication.run(CommonApplication.class, args);
 	}
 
 }
