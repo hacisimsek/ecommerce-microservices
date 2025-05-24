@@ -1,0 +1,11 @@
+ecommerce-microservices/
+├── pom.xml                          # Parent POM
+├── common-library/                  # Shared code between services
+├── service-registry/                # Eureka Service Discovery
+├── api-gateway/                     # Spring Cloud Gateway
+├── order-service/                   # Order management
+├── inventory-service/               # Inventory management
+├── payment-service/                 # Payment processing
+├── notification-service/            # Notification handling
+├── shipping-service/                # Shipping management
+└── docker-compose.yml               # Docker composition for all services
