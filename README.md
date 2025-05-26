@@ -305,4 +305,4 @@ Use Postman or curl to test the full order processing flow:
 
 ---
 
-*© 2025 simsekhaci. All rights reserved.*
+*© 2025 hacisimsek. All rights reserved.*
