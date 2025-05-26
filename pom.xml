@@ -25,13 +25,13 @@
 
 	<modules>
 		<module>common-library</module>
+		<module>service-registry</module>
+		<module>api-gateway</module>
 		<module>order-service</module>
 		<module>inventory-service</module>
-		<module>api-gateway</module>
 		<module>payment-service</module>
 		<module>notification-service</module>
 		<module>shipping-service</module>
-		<module>service-registry</module>
 	</modules>
 
 	<dependencyManagement>
