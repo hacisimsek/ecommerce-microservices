@@ -20,7 +20,7 @@ import java.util.UUID;
 public class InventoryItemServiceImpl implements InventoryItemService {
 
     private final InventoryRepository inventoryRepository;
-    private final String username = "simsekhacii";
+    private final String username = "simsekhaci";
     private final LocalDateTime timestamp = LocalDateTime.parse("2025-05-24T16:45:26", DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 
     @Override
