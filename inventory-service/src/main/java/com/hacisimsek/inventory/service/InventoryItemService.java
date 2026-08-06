@@ -4,13 +4,13 @@ import com.hacisimsek.inventory.dto.InventoryItemRequest;
 import com.hacisimsek.inventory.model.InventoryItem;
 
 import java.util.List;
-import java.util.UUID;
+// import java.util.UUID;
 
 public interface InventoryItemService {
     InventoryItem createInventoryItem(InventoryItemRequest request);
-    InventoryItem getInventoryItemById(UUID id);
+    InventoryItem getInventoryItemById(String id);
     List<InventoryItem> getAllInventoryItems();
-    InventoryItem updateInventoryItem(UUID id, InventoryItemRequest request);
-    void deleteInventoryItem(UUID id);
-    boolean checkAvailability(UUID productId, Integer quantity);
+    InventoryItem updateInventoryItem(String id, InventoryItemRequest request);
+    void deleteInventoryItem(String id);
+    boolean checkAvailability(String productId, Integer quantity);
 }

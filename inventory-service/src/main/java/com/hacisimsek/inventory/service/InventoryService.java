@@ -6,6 +6,6 @@ import java.util.UUID;
 
 public interface InventoryService {
     void reserveInventory(OrderCreatedEvent orderCreatedEvent);
-    void confirmReservation(UUID orderId);
-    void cancelReservation(UUID orderId);
+    void confirmReservation(String orderId);
+    void cancelReservation(String orderId);
 }

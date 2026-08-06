@@ -15,20 +15,16 @@ public class InventorySagaHandler {
 
     private final InventoryService inventoryService;
 
+    // test one pipeline 
     @KafkaListener(topics = "order-events", groupId = "inventory-service-group")
-    public void handleOrderEvents(Object event) {
-        if (event instanceof OrderCreatedEvent orderCreatedEvent) {
-            log.info("Received OrderCreatedEvent for order: {}", orderCreatedEvent.getOrderId());
-            inventoryService.reserveInventory(orderCreatedEvent);
-        }
+    public void handleOrderEvents(OrderCreatedEvent orderCreatedEvent) {
+        log.info("Received OrderCreatedEvent for order: {}", orderCreatedEvent.getOrderId());
+        inventoryService.reserveInventory(orderCreatedEvent);
     }
 
     @KafkaListener(topics = "payment-events", groupId = "inventory-service-group")
-    public void handlePaymentEvents(Object event) {
-        if (event instanceof PaymentFailedEvent paymentFailedEvent) {
-            log.info("Received PaymentFailedEvent for order: {}, cancelling inventory reservation",
-                    paymentFailedEvent.getOrderId());
-            inventoryService.cancelReservation(paymentFailedEvent.getOrderId());
-        }
+    public void handlePaymentEvents(PaymentFailedEvent paymentFailedEvent) {
+        log.info("Received PaymentFailedEvent for order: {}", paymentFailedEvent.getOrderId());
+        inventoryService.cancelReservation(paymentFailedEvent.getOrderId().toString());
     }
 }

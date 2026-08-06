@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: ecommerce
+  labels:
+    managed-by: argocd
+data:
+  # Server .....................
+  SERVER_PORT: "8084"
+  #APPLICATION...............
+  SPRING_APPLICATION_NAME: "notification-service"
+  # MongoDB ............
+  # Host matches MongoDB service name in K8s.....
+  SPRING_DATA_MONGODB_URI: "mongodb://mongodb:27017/notification-db"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  # Kafka ...........
+  # Host matches Kafka service name in K8s.........
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: "earliest"
+  SPRING_KAFKA_CONSUMER_GROUP_ID: "notification-service-group"
+  # Eureka .............
+  # Host matches service-registry service name in K8S.......
+  EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://service-registry:8761/eureka/"
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+  # FOR LOGGING
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_HACISIMSEK: "DEBUG"

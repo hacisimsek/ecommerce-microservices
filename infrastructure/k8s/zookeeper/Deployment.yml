@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zookeeper
+  namespace: ecommerce
+  labels:
+    app: zookeeper
+    version: "1.0"
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+        version: "1.0"
+    spec:
+      containers:
+      - name: zookeeper
+        image: confluentinc/cp-zookeeper:7.6.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: zookeeper
+          containerPort: 2181
+          protocol: TCP
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_TICK_TIME
+          value: "2000"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 2181
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 2181
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: zookeeper-data
+          mountPath: /var/lib/zookeeper/data
+        - name: zookeeper-log
+          mountPath: /var/lib/zookeeper/log
+      volumes:
+      - name: zookeeper-data
+        emptyDir: {}
+      - name: zookeeper-log
+        emptyDir: {}
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: ecommerce
+  labels:
+    app: zookeeper
+    managed-by: argocd
+spec:
+  type: ClusterIP
+  selector:
+    app: zookeeper
+  ports:
+  - name: zookeeper
+    port: 2181
+    targetPort: 2181
+    protocol: TCP

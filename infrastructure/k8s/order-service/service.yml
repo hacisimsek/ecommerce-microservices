@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: ecommerce
+  labels:
+    app: order-service
+    managed-by: argocd
+spec:
+  type: ClusterIP
+    # internal only — only api-gateway talks to this
+    # NOT exposed to internet directly
+  selector:
+    app: order-service # routes traffic to pods with this label
+  ports:
+  - name: http
+    port: 8081 # port other services use to call this service
+    targetPort: 8081 # port the container listens on
+    protocol: TCP

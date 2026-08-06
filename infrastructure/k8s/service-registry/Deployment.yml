@@ -1,0 +1,92 @@
+# deployment.yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-registry
+  namespace: ecommerce
+  labels:
+    app: service-registry
+    version: "1.0"
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-registry
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: service-registry
+        version: "1.0"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: service-registry
+        image: nayan2001/service-registry:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8761
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: service-registry-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8761
+          failureThreshold: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8761
+          periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8761
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp-dir
+          mountPath: /tmp
+        - name: logs-dir
+          mountPath: /app/logs
+      volumes:
+      - name: tmp-dir
+        emptyDir: {}
+      - name: logs-dir
+        emptyDir: {}
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+      terminationGracePeriodSeconds: 30

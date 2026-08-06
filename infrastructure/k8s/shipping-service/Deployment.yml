@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipping-service
+  namespace: ecommerce
+  labels:
+    app: shipping-service
+    version: "1.0"
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shipping-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: shipping-service
+        version: "1.0"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      initContainers:
+      - name: wait-for-postgresql
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z postgresql 5432; do 
+            echo "waiting for postgresql.....";
+            sleep 3;
+          done;
+          echo "Postgresql is ready!"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+      - name: wait-for-service-registry
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z service-registry 8761; do 
+            echo "waiting for Eureka ,,,,,";
+            sleep 3;
+          done;
+          echo "wating for eureka ..... ";
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+      - name: wait-for-kafka
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z kafka 9092; do 
+            echo "wating for kafka .....";
+            sleep 3;
+          done;
+          echo "kafka is ready...."
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+      containers:
+      - name: shipping-service
+        image: nayan2001/shipping-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8085
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: shipping-service-config
+        env:
+        - name: SPRING_DATASOURCE_URL
+          valueFrom:
+            secretKeyRef:
+              name: shipping-service-secret
+              key: datasource-url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        # ── Health Checks ──────────────────────────────
+        # startupProbe: gives app time to start before liveness kicks in
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8085
+          failureThreshold: 30 # 30 * 10s = 5 minutes to start
+          periodSeconds: 10
+        # livenessProbe: restart pod if app is stuck/crashed
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8085
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 5
+        # readinessProbe: only send traffic when app is truly ready
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8085
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
+        # ── Security Context (container level)
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL # drop all Linux capabilities
+        # ── Writable temp dirs (needed by JVM)
+        volumeMounts:
+        - name: tmp-dir
+          mountPath: /tmp
+        - name: logs-dir
+          mountPath: /app/logs
+      volumes:
+      - name: tmp-dir
+        emptyDir: {}
+      - name: logs-dir
+        emptyDir: {}
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+      terminationGracePeriodSeconds: 30

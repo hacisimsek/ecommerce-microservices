@@ -5,6 +5,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.kafka.annotation.EnableKafka;
 
+
+// dummy commet for pipeline triger 
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableKafka

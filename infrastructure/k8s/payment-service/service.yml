@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: ecommerce
+  labels:
+    app: payment-service
+    managed-by: argocd
+spec:
+  type: ClusterIP
+    # internal only — only api-gateway talks to this
+    # NOT exposed to internet directly
+  selector:
+    app: payment-service # routes traffic to pods with this label
+  ports:
+  - name: http
+    port: 8083 # port other services use to call this service
+    targetPort: 8083 # port the container listens on
+    protocol: TCP

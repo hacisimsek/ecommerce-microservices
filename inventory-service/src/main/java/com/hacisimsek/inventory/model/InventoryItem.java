@@ -21,7 +21,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InventoryItem {
     @Id
-    private UUID id;
+    private String  id;
     private String name;
     private String description;
     private Integer availableQuantity;

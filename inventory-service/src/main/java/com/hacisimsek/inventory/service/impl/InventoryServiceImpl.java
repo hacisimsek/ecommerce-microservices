@@ -40,7 +40,7 @@ public class InventoryServiceImpl implements InventoryService {
 
         // Check if all items are available in sufficient quantity
         for (var orderItem : orderCreatedEvent.getItems()) {
-            InventoryItem item = inventoryRepository.findById(orderItem.getProductId())
+            InventoryItem item = inventoryRepository.findById(orderItem.getProductId().toString())
                     .orElse(null);
 
             if (item == null) {
@@ -62,7 +62,7 @@ public class InventoryServiceImpl implements InventoryService {
 
             // Add to reservation items
             reservationItems.add(InventoryReservation.ReservationItem.builder()
-                    .productId(orderItem.getProductId())
+                    .productId(orderItem.getProductId().toString())
                     .quantity(orderItem.getQuantity())
                     .build());
         }
@@ -82,9 +82,9 @@ public class InventoryServiceImpl implements InventoryService {
 
         // Create reservation
         InventoryReservation reservation = InventoryReservation.builder()
-                .id(UUID.randomUUID())
-                .orderId(orderCreatedEvent.getOrderId())
-                .correlationId(orderCreatedEvent.getCorrelationId())
+                .id(UUID.randomUUID().toString())
+                .orderId(orderCreatedEvent.getOrderId().toString())
+                .correlationId(orderCreatedEvent.getCorrelationId().toString())
                 .items(reservationItems)
                 .status(InventoryReservation.ReservationStatus.CONFIRMED)
                 .createdAt(LocalDateTime.parse("2025-05-24T13:39:46"))
@@ -95,7 +95,7 @@ public class InventoryServiceImpl implements InventoryService {
 
         // Update inventory quantities
         for (var reservationItem : reservationItems) {
-            InventoryItem item = inventoryRepository.findById(reservationItem.getProductId()).orElseThrow();
+            InventoryItem item = inventoryRepository.findById(reservationItem.getProductId().toString()).orElseThrow();
             item.setAvailableQuantity(item.getAvailableQuantity() - reservationItem.getQuantity());
             item.setReservedQuantity(item.getReservedQuantity() + reservationItem.getQuantity());
             inventoryRepository.save(item);
@@ -113,7 +113,7 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Override
     @Transactional
-    public void confirmReservation(UUID orderId) {
+    public void confirmReservation(String orderId) {
         InventoryReservation reservation = reservationRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new RuntimeException("Reservation not found for order: " + orderId));
 
@@ -126,7 +126,7 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Override
     @Transactional
-    public void cancelReservation(UUID orderId) {
+    public void cancelReservation(String orderId) {
         InventoryReservation reservation = reservationRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new RuntimeException("Reservation not found for order: " + orderId));
 

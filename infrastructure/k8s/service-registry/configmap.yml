@@ -1,0 +1,15 @@
+# configmap.yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-registry-config
+  namespace: ecommerce
+  labels:
+    managed-by: argocd
+data:
+  SERVER_PORT: "8761"
+  SPRING_APPLICATION_NAME: "service-registry"
+  EUREKA_CLIENT_REGISTER_WITH_EUREKA: "false"
+  EUREKA_CLIENT_FETCH_REGISTRY: "false"
+  EUREKA_SERVER_WAIT_TIME_IN_MS_WHEN_SYNC_EMPTY: "0"
+  LOGGING_LEVEL_ROOT: "INFO"

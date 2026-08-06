@@ -19,9 +19,9 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InventoryReservation {
     @Id
-    private UUID id;
-    private UUID orderId;
-    private UUID correlationId;
+    private String orderId;
+    private String id;
+    private String correlationId;
     private List<ReservationItem> items;
     private ReservationStatus status;
     private LocalDateTime createdAt;
@@ -36,7 +36,7 @@ public class InventoryReservation {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ReservationItem {
-        private UUID productId;
+        private String productId;
         private Integer quantity;
     }
 }

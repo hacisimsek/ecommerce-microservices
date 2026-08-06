@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shipping-service-config
+  namespace: ecommerce
+  labels:
+    managed-by: argocd
+data:
+  # Server .....................
+  SERVER_PORT: "8085"
+  #APPLICATION...............
+  SPRING_APPLICATION_NAME: "shipping-service"
+  # postgres ............
+  # Host matches postgres service name in K8s.....
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgresql:5432/shipping_db"
+  SPRING_DATASOURCE_USERNAME: "postgres"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+  SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: "org.hibernate.dialect.PostgreSQLDialect"
+  # Kafka ...........
+  # Host matches Kafka service name in K8s.........
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: "earliest"
+  SPRING_KAFKA_CONSUMER_GROUP_ID: "shipping-service-group"
+  # Eureka .............
+  # Host matches service-registry service name in K8S.......
+  EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://service-registry:8761/eureka/"
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+  # FOR LOGGING
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_HACISIMSEK: "DEBUG"

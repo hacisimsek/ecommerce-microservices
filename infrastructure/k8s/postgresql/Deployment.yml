@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: ecommerce
+  labels:
+    app: postgresql
+    version: "1.0"
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        version: "1.0"
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:16
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: postgresql
+          containerPort: 5432
+          protocol: TCP
+        env:
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: postgres-password
+        - name: POSTGRES_MULTIPLE_DATABASES
+          value: "order_db,payment_db,shipping_db"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: postgresql-data
+        persistentVolumeClaim:
+          claimName: postgresql-pvc
+      - name: init-script
+        configMap:
+          name: postgresql-init-script
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-init-script
+  namespace: ecommerce
+  labels:
+    app: postgresql
+    managed-by: argocd
+data:
+  init-multiple-dbs.sh: |
+    #!/bin/bash
+    set -e
+    function create_user_and_database() {
+      local database=$1
+      echo "Creating database '$database'"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+        CREATE DATABASE $database;
+        GRANT ALL PRIVILEGES ON DATABASE $database TO $POSTGRES_USER;
+    EOSQL
+    }
+
+    if [ -n "$POSTGRES_MULTIPLE_DATABASES" ]; then
+      echo "Multiple database creation requested: $POSTGRES_MULTIPLE_DATABASES"
+      for db in $(echo $POSTGRES_MULTIPLE_DATABASES | tr ',' ' '); do
+        create_user_and_database $db
+      done
+      echo "Multiple databases created"
+    fi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+  namespace: ecommerce
+  labels:
+    app: postgresql
+    managed-by: argocd
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: ecommerce
+  labels:
+    app: postgresql
+    managed-by: argocd
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+    protocol: TCP

@@ -27,7 +27,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     @Transactional
     public InventoryItem createInventoryItem(InventoryItemRequest request) {
         InventoryItem item = InventoryItem.builder()
-                .id(UUID.randomUUID())
+                .id(UUID.randomUUID().toString())
                 .name(request.getName())
                 .description(request.getDescription())
                 .availableQuantity(request.getQuantity())
@@ -39,7 +39,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     }
 
     @Override
-    public InventoryItem getInventoryItemById(UUID id) {
+    public InventoryItem getInventoryItemById(String  id) {
         return inventoryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Inventory item not found with id: " + id));
     }
@@ -51,7 +51,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Override
     @Transactional
-    public InventoryItem updateInventoryItem(UUID id, InventoryItemRequest request) {
+    public InventoryItem updateInventoryItem(String  id, InventoryItemRequest request) {
         InventoryItem existingItem = getInventoryItemById(id);
 
         existingItem.setName(request.getName());
@@ -64,14 +64,14 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Override
     @Transactional
-    public void deleteInventoryItem(UUID id) {
+    public void deleteInventoryItem(String  id) {
         InventoryItem item = getInventoryItemById(id);
         log.info("Deleting inventory item: {}", id);
         inventoryRepository.delete(item);
     }
 
     @Override
-    public boolean checkAvailability(UUID productId, Integer quantity) {
+    public boolean checkAvailability(String  productId, Integer quantity) {
         InventoryItem item = inventoryRepository.findById(productId)
                 .orElse(null);
 

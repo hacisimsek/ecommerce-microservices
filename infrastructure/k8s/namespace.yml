@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce
+  labels:
+    name: ecommerce
+    managed-by: argocd
+    environment: local #later on we will change it to dev/stage/prod env

@@ -10,7 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.UUID;
+// import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -28,7 +28,7 @@ public class InventoryController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<InventoryItemResponse> getInventoryItemById(@PathVariable UUID id) {
+    public ResponseEntity<InventoryItemResponse> getInventoryItemById(@PathVariable String  id) {
         InventoryItem item = inventoryItemService.getInventoryItemById(id);
         return ResponseEntity.ok(mapToResponse(item));
     }
@@ -44,21 +44,21 @@ public class InventoryController {
 
     @PutMapping("/{id}")
     public ResponseEntity<InventoryItemResponse> updateInventoryItem(
-            @PathVariable UUID id,
+            @PathVariable String id,
             @RequestBody InventoryItemRequest request) {
         InventoryItem updatedItem = inventoryItemService.updateInventoryItem(id, request);
         return ResponseEntity.ok(mapToResponse(updatedItem));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteInventoryItem(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteInventoryItem(@PathVariable String id) {
         inventoryItemService.deleteInventoryItem(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/check")
     public ResponseEntity<Boolean> checkInventoryAvailability(
-            @RequestParam UUID productId,
+            @RequestParam String productId,
             @RequestParam Integer quantity) {
         boolean isAvailable = inventoryItemService.checkAvailability(productId, quantity);
         return ResponseEntity.ok(isAvailable);

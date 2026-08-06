@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-service-config
+  namespace: ecommerce
+  labels:
+    managed-by: argocd
+data:
+  # Server .....................
+  SERVER_PORT: "8082"
+  #APPLICATION...............
+  SPRING_APPLICATION_NAME: "inventory-service"
+  # MongoDB ............
+  # Host matches MongoDB service name in K8s.....
+  SPRING_DATA_MONGODB_URI: "mongodb://mongodb:27017/inventory-db"
+  # Kafka ...........
+  # Host matches Kafka service name in K8s.........
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: "earliest"
+  SPRING_KAFKA_CONSUMER_GROUP_ID: "inventory-service-group"
+  SPRING_KAFKA_CONSUMER_PROPERTIES_SPRING_JSON_TRUSTED_PACKAGES: "*"
+  SPRING_KAFKA_CONSUMER_PROPERTIES_SPRING_JSON_USE_TYPE_HEADERS: "false"
+  SPRING_KAFKA_CONSUMER_VALUE_DESERIALIZER: "org.springframework.kafka.support.serializer.JsonDeserializer"
+  # Eureka .............
+  # Host matches service-registry service name in K8S.......
+  EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://service-registry:8761/eureka/"
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+  # FOR LOGGING
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_HACISIMSEK: "DEBUG"
