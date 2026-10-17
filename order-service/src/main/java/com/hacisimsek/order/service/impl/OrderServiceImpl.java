@@ -1,7 +1,12 @@
 package com.hacisimsek.order.service.impl;
 
 import com.hacisimsek.common.dto.OrderItemDto;
+import com.hacisimsek.common.event.BaseEvent;
 import com.hacisimsek.common.event.order.OrderCreatedEvent;
+import com.hacisimsek.common.kafka.KafkaTopics;
+import com.hacisimsek.common.messaging.EventPublisher;
+import com.hacisimsek.common.messaging.IdempotencyGuard;
+import com.hacisimsek.common.web.ResourceNotFoundException;
 import com.hacisimsek.order.dto.OrderItemResponse;
 import com.hacisimsek.order.dto.OrderRequest;
 import com.hacisimsek.order.dto.OrderResponse;
@@ -11,7 +16,6 @@ import com.hacisimsek.order.repository.OrderRepository;
 import com.hacisimsek.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +30,8 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final EventPublisher eventPublisher;
+    private final IdempotencyGuard idempotencyGuard;
 
     @Override
     @Transactional
@@ -74,20 +79,22 @@ public class OrderServiceImpl implements OrderService {
                 savedOrder.getTotalAmount()
         );
 
-        // Delivered to Kafka by OrderEventPublisher once this transaction commits
-        eventPublisher.publishEvent(event);
+        // Written to the outbox in this transaction; the relay delivers it to Kafka after commit
+        eventPublisher.publish(KafkaTopics.ORDER_EVENTS, savedOrder.getId().toString(), event);
 
         return mapToOrderResponse(savedOrder);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public OrderResponse getOrderById(UUID orderId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         return mapToOrderResponse(order);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderResponse> getAllOrders() {
         return orderRepository.findAll().stream()
                 .map(this::mapToOrderResponse)
@@ -95,6 +102,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderResponse> getOrdersByCustomerId(UUID customerId) {
         return orderRepository.findByCustomerId(customerId).stream()
                 .map(this::mapToOrderResponse)
@@ -103,9 +111,12 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public void updateOrderStatus(UUID orderId, Order.OrderStatus status) {
+    public void updateOrderStatus(BaseEvent cause, UUID orderId, Order.OrderStatus status) {
+        if (!idempotencyGuard.firstDelivery(cause)) {
+            return;
+        }
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         if (!order.getStatus().canTransitionTo(status)) {
             log.warn("Ignoring status change {} -> {} for order {}", order.getStatus(), status, orderId);
             return;

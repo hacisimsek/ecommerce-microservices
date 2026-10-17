@@ -1,5 +1,6 @@
 package com.hacisimsek.inventory.service.impl;
 
+import com.hacisimsek.common.web.ResourceNotFoundException;
 import com.hacisimsek.inventory.dto.InventoryItemRequest;
 import com.hacisimsek.inventory.model.InventoryItem;
 import com.hacisimsek.inventory.repository.InventoryRepository;
@@ -37,7 +38,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     @Override
     public InventoryItem getInventoryItemById(UUID id) {
         return inventoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Inventory item not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory item", id));
     }
 
     @Override

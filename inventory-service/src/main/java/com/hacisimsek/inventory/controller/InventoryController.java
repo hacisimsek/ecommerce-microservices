@@ -4,6 +4,7 @@ import com.hacisimsek.inventory.dto.InventoryItemRequest;
 import com.hacisimsek.inventory.dto.InventoryItemResponse;
 import com.hacisimsek.inventory.model.InventoryItem;
 import com.hacisimsek.inventory.service.InventoryItemService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +22,7 @@ public class InventoryController {
     private final InventoryItemService inventoryItemService;
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public ResponseEntity<InventoryItemResponse> createInventoryItem(@RequestBody InventoryItemRequest request) {
+    public ResponseEntity<InventoryItemResponse> createInventoryItem(@Valid @RequestBody InventoryItemRequest request) {
         InventoryItem savedItem = inventoryItemService.createInventoryItem(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(savedItem));
     }
@@ -45,7 +45,7 @@ public class InventoryController {
     @PutMapping("/{id}")
     public ResponseEntity<InventoryItemResponse> updateInventoryItem(
             @PathVariable UUID id,
-            @RequestBody InventoryItemRequest request) {
+            @Valid @RequestBody InventoryItemRequest request) {
         InventoryItem updatedItem = inventoryItemService.updateInventoryItem(id, request);
         return ResponseEntity.ok(mapToResponse(updatedItem));
     }

@@ -1,5 +1,6 @@
 package com.hacisimsek.order.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -17,5 +18,5 @@ public class OrderRequest {
     private UUID customerId;
 
     @NotEmpty
-    private List<OrderItemRequest> items;
+    private List<@Valid OrderItemRequest> items;
 }

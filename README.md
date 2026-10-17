@@ -113,44 +113,60 @@ graph TD
 
 This project implements the Saga pattern using a choreography-based approach:
 
-### Order Processing Flow:
+### Order Processing Flow
 
-1. **Order Creation**:
-    - Customer places an order
-    - Order service creates an order with PENDING status
-    - Order service publishes OrderCreatedEvent
+| Step | Consumer | Reacts to | Publishes |
+|------|----------|-----------|-----------|
+| 1 | order-service (REST) | `POST /api/orders` | `OrderCreatedEvent` (order `INVENTORY_CHECKING`) |
+| 2 | inventory-service | `OrderCreatedEvent` | `InventoryReservedEvent` or `InventoryReservationFailedEvent` |
+| 3 | payment-service | `InventoryReservedEvent` | `PaymentProcessedEvent` or `PaymentFailedEvent` |
+| 4 | shipping-service | `PaymentProcessedEvent` | `ShipmentProcessedEvent` or `ShipmentFailedEvent` |
+| 5 | inventory-service | `ShipmentProcessedEvent` | — (reservation confirmed, stock leaves the warehouse) |
 
-2. **Inventory Reservation**:
-    - Inventory service consumes OrderCreatedEvent
-    - Checks product availability
-    - Reserves inventory if available
-    - Publishes InventoryReservedEvent or InventoryReservationFailedEvent
+The order service follows along and moves the order to `INVENTORY_RESERVED` → `PAYMENT_COMPLETED` → `SHIPPED`.
 
-3. **Payment Processing**:
-    - Payment service consumes InventoryReservedEvent
-    - Processes payment
-    - Publishes PaymentProcessedEvent or PaymentFailedEvent
+### Compensation
 
-4. **Shipping Creation**:
-    - Shipping service consumes PaymentProcessedEvent
-    - Creates shipping record
-    - Publishes ShipmentProcessedEvent or ShipmentFailedEvent
+| Failure | Order | Inventory | Payment | Customer |
+|---------|-------|-----------|---------|----------|
+| Out of stock | `CANCELLED` | nothing reserved | — | "order cancelled" |
+| Payment declined | `FAILED` | reservation released | `FAILED` | "payment failed" |
+| Shipping rejected | `FAILED` | reservation released | `REFUNDED` (`PaymentRefundedEvent`) | "payment refunded" |
 
-5. **Order Completion**:
-    - Order service updates order status to COMPLETED
+For local testing the fake providers fail deterministically: payments above `PAYMENT_MAX_AMOUNT`
+(10 000) are declined, shipments above `SHIPPING_MAX_INSURED_VALUE` (5 000) are rejected.
 
-### Compensation Transactions:
+### Delivery guarantees
 
-If any step fails, the system executes compensation transactions to maintain consistency:
+- **Transactional outbox.** Services never call Kafka inside a business transaction. The event
+  is written to an `outbox` table (Postgres) or collection (MongoDB) in the same transaction as
+  the state change; `OutboxRelay` sends it to Kafka and deletes it once the broker acknowledged.
+  MongoDB runs as a single-node replica set because multi-document transactions need one.
+- **Idempotent consumers.** Every handler first records `(eventId, consumer)` in
+  `processed_events` in the same transaction, so a redelivered event changes nothing.
+  Unique constraints (one payment / shipment per order) back this up.
+- **Ordering.** Events are keyed by order ID, so one order's events stay in one partition. Events
+  from different topics can still arrive out of order, so the order service only accepts forward
+  status transitions, and `@Version` columns turn concurrent updates into retries.
+- **Dead letter topics.** A failing record is retried with exponential backoff (0.5 s → 4 s, 4
+  retries) and then published to `<topic>.DLT` with the exception in its headers. Records that can
+  never succeed (undeserializable payloads) go there immediately. Browse them with Kafka UI.
 
-- **Inventory Failure**: Order is marked `CANCELLED`, customer is notified
-- **Payment Failure**: Inventory service releases reserved inventory, order is marked `FAILED`
-- **Shipping Failure**: Order is marked `FAILED` *(refund + inventory release is planned, see [docs/ROADMAP.md](docs/ROADMAP.md) Phase 2)*
-- **Notification Service**: Informs the customer about transaction status (success/failure)
+### API errors
 
-Events are published with the order ID as the Kafka key and a type header, so each listener
-dispatches on the concrete event class (`@KafkaHandler`). Because events from different topics can
-arrive out of order, the order service only accepts forward status transitions.
+Every service answers errors as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+`application/problem+json`: `404` for unknown resources, `400` with an `errors` list for
+validation failures, `409` for business rule conflicts, and a generic `500` that never leaks internals.
+
+```json
+{
+  "type": "https://api.ecommerce.local/problems/validation",
+  "title": "Validation failed",
+  "status": 400,
+  "detail": "Request has 2 invalid field(s)",
+  "errors": [{ "field": "customerId", "message": "must not be null" }]
+}
+```
 
 ## Project Structure
 
@@ -160,7 +176,7 @@ ecommerce-microservices/
 ├── Dockerfile                       # Single multi-stage image build (--build-arg SERVICE=...)
 ├── docker-compose.yml               # Full local stack: infrastructure + all services
 ├── .env.example                     # Host ports and simulation knobs
-├── common-library/                  # Shared events, Kafka topics and Kafka defaults
+├── common-library/                  # Shared events, outbox, idempotency, DLT and error handling
 ├── service-registry/                # Eureka Service Discovery
 ├── api-gateway/                     # Spring Cloud Gateway
 ├── order-service/                   # Order management, starts the saga
@@ -199,8 +215,8 @@ The first build takes a few minutes. Services register with Eureka within about 
 Compose refuses to start without the credentials from `.env`. The values in `.env.example`
 are for local development only.
 
-> **Upgrading from an earlier checkout?** The database schema is now owned by Flyway and every
-> store requires credentials, so recreate the volumes once: `docker compose down -v`.
+> **Upgrading from an earlier checkout?** Schemas are owned by Flyway, every store requires
+> credentials and MongoDB now runs as a replica set, so recreate the volumes once: `docker compose down -v`.
 
 Host ports default to values that avoid other common local stacks (Postgres `5433`, Redis `6380`,
 Kafka `29092`); change them in `.env`.
@@ -211,9 +227,9 @@ Kafka `29092`); change them in `.env`.
 ./scripts/smoke-test.sh
 ```
 
-It creates stock, places orders through the gateway and checks three flows: the happy path
-(`SHIPPED`, stock reserved, payment, shipment and notifications created), an out-of-stock order
-(`CANCELLED`) and a declined payment (`FAILED`, reservation released).
+It creates stock and places orders through the gateway, then checks the happy path, each
+compensation branch (out of stock, payment declined, shipping rejected), the problem-detail error
+format, that a replayed Kafka event is ignored, and that a poison message lands on the DLT.
 
 ### Run a service from the IDE
 
@@ -242,6 +258,7 @@ precedence, so a service's `application.yml` or an environment variable always w
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6380` / *(required)* | notification |
 | `PAYMENT_FAILURE_RATE` | `0.0` | payment: random decline probability |
 | `PAYMENT_MAX_AMOUNT` | `10000` | payment: orders above this are declined |
+| `SHIPPING_MAX_INSURED_VALUE` | `5000` | shipping: orders above this cannot be shipped |
 
 ### Database migrations
 
