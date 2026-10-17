@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.2.12</version>
+		<version>3.5.16</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.hacisimsek</groupId>
@@ -16,11 +16,11 @@
 	<description>E-commerce platform built on Spring Boot microservices and a choreography-based saga</description>
 
 	<properties>
-		<java.version>17</java.version>
-		<spring-cloud.version>2023.0.2</spring-cloud.version>
-		<spring-kafka.version>3.1.2</spring-kafka.version>
-		<lombok.version>1.18.32</lombok.version>
-		<mapstruct.version>1.5.5.Final</mapstruct.version>
+		<java.version>21</java.version>
+		<!-- Library versions (Spring Kafka, Lombok, Flyway, Jackson, ...) come from the Spring Boot BOM.
+		     Override a Boot-managed version here only with a written reason. -->
+		<spring-cloud.version>2025.0.3</spring-cloud.version>
+		<spotless.version>3.10.4</spotless.version>
 	</properties>
 
 	<modules>
@@ -50,7 +50,6 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-			<version>${lombok.version}</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
@@ -65,6 +64,71 @@
 	</dependencies>
 
 	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<!-- Explicit processor path: newer JDKs no longer discover processors implicitly -->
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>enforce-build-environment</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>[21,)</version>
+								</requireJavaVersion>
+								<requireMavenVersion>
+									<version>[3.9,)</version>
+								</requireMavenVersion>
+								<banDuplicatePomDependencyVersions/>
+								<requirePluginVersions>
+									<unCheckedPluginList>org.apache.maven.plugins:maven-site-plugin</unCheckedPluginList>
+								</requirePluginVersions>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>${spotless.version}</version>
+				<configuration>
+					<java>
+						<removeUnusedImports/>
+						<importOrder>
+							<order>,javax|java,\#</order>
+						</importOrder>
+						<trimTrailingWhitespace/>
+						<endWithNewline/>
+					</java>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<phase>verify</phase>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
 		<pluginManagement>
 			<plugins>
 				<plugin>

@@ -1,36 +1,16 @@
+# Shared defaults (Kafka, Eureka, actuator, JPA, virtual threads) come from
+# common-library/src/main/resources/shared-defaults.yml; anything here overrides them.
 server:
   port: 8083
 
 spring:
   application:
     name: payment-service
-  config:
-    import: classpath:common-kafka.yml
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/payment_db
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:postgres}
-  jpa:
-    hibernate:
-      ddl-auto: update
-    open-in-view: false
-
-eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
-  instance:
-    prefer-ip-address: true
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      probes:
-        enabled: true
+    # No defaults for credentials: provide them via environment (see .env.example)
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
 payment:
   simulation:

@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Listeners dispatch on the concrete event class, which only works if the type header written
- * by the producer lets the consumer rebuild that class (configured in common-kafka.yml).
+ * by the producer lets the consumer rebuild that class (configured in shared-defaults.yml).
  */
 class EventSerializationTest {
 
