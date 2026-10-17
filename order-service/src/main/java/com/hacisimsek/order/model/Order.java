@@ -34,6 +34,9 @@ public class Order {
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItem> items;
 
+    @Version
+    private Long version;
+
     private LocalDateTime createdAt;
     private String createdBy;
     private LocalDateTime lastModifiedAt;

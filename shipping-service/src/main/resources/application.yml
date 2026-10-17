@@ -11,3 +11,8 @@ spring:
     # No defaults for credentials: provide them via environment (see .env.example)
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+
+shipping:
+  simulation:
+    # Orders worth more than this cannot be shipped; triggers refund + stock release
+    max-insured-value: ${SHIPPING_MAX_INSURED_VALUE:5000}

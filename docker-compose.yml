@@ -42,6 +42,14 @@ services:
 
   mongodb:
     image: mongo:7.0
+    # Single-node replica set: MongoDB only supports multi-document transactions (needed for the
+    # outbox) on a replica set, and a replica set with auth needs a key file.
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        head -c 756 /dev/urandom | base64 > /tmp/mongo-keyfile
+        chmod 400 /tmp/mongo-keyfile && chown 999:999 /tmp/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/mongo-keyfile --bind_ip_all --wiredTigerCacheSizeGB 0.25
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?Set MONGO_USERNAME in .env (see .env.example)}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD in .env (see .env.example)}
@@ -50,10 +58,17 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      # Initiates the replica set on first run, then reports healthy once this node is primary
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD"
+          --eval "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongodb:27017'}]}) };
+          quit(db.hello().isWritablePrimary ? 0 : 1)"
       interval: 5s
-      timeout: 5s
-      retries: 20
+      timeout: 10s
+      retries: 30
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -200,6 +215,7 @@ services:
       POSTGRES_PORT: 5432
       DB_USERNAME: shipping_svc
       DB_PASSWORD: ${SHIPPING_DB_PASSWORD}
+      SHIPPING_MAX_INSURED_VALUE: ${SHIPPING_MAX_INSURED_VALUE:-5000}
     depends_on:
       <<: *service-deps
       postgres:

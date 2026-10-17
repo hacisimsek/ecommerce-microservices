@@ -1,23 +1,27 @@
 package com.hacisimsek.inventory.service.impl;
 
+import com.hacisimsek.common.event.BaseEvent;
 import com.hacisimsek.common.event.inventory.InventoryReservationFailedEvent;
 import com.hacisimsek.common.event.inventory.InventoryReservedEvent;
 import com.hacisimsek.common.event.order.OrderCreatedEvent;
 import com.hacisimsek.common.kafka.KafkaTopics;
+import com.hacisimsek.common.messaging.EventPublisher;
+import com.hacisimsek.common.messaging.IdempotencyGuard;
 import com.hacisimsek.inventory.model.InventoryItem;
 import com.hacisimsek.inventory.model.InventoryReservation;
+import com.hacisimsek.inventory.model.InventoryReservation.ReservationStatus;
 import com.hacisimsek.inventory.repository.InventoryRepository;
 import com.hacisimsek.inventory.repository.ReservationRepository;
 import com.hacisimsek.inventory.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,137 +31,128 @@ public class InventoryServiceImpl implements InventoryService {
 
     private final InventoryRepository inventoryRepository;
     private final ReservationRepository reservationRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final EventPublisher eventPublisher;
+    private final IdempotencyGuard idempotencyGuard;
 
     @Override
     @Transactional
-    public void reserveInventory(OrderCreatedEvent orderCreatedEvent) {
-        log.info("Processing inventory reservation for order: {}", orderCreatedEvent.getOrderId());
-        if (reservationRepository.findByOrderId(orderCreatedEvent.getOrderId()).isPresent()) {
-            log.info("Reservation for order {} already exists, skipping", orderCreatedEvent.getOrderId());
+    public void reserveInventory(OrderCreatedEvent event) {
+        if (!idempotencyGuard.firstDelivery(event)) {
+            return;
+        }
+        UUID orderId = event.getOrderId();
+        log.info("Processing inventory reservation for order: {}", orderId);
+
+        List<InventoryItem> items = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        for (var orderItem : event.getItems()) {
+            Optional<InventoryItem> item = inventoryRepository.findById(orderItem.getProductId());
+            if (item.isEmpty()) {
+                problems.add("Product not found: " + orderItem.getProductId());
+            } else if (item.get().getAvailableQuantity() < orderItem.getQuantity()) {
+                problems.add("Insufficient quantity for product " + orderItem.getProductId()
+                        + ": requested " + orderItem.getQuantity()
+                        + ", available " + item.get().getAvailableQuantity());
+            } else {
+                items.add(item.get());
+            }
+        }
+
+        if (!problems.isEmpty()) {
+            String reason = String.join("; ", problems);
+            eventPublisher.publish(KafkaTopics.INVENTORY_EVENTS, orderId.toString(),
+                    new InventoryReservationFailedEvent(event.getCorrelationId(), orderId, event.getCustomerId(), reason));
+            log.warn("Inventory reservation failed for order {}: {}", orderId, reason);
             return;
         }
 
-        List<InventoryReservation.ReservationItem> reservationItems = new ArrayList<>();
-        boolean allItemsAvailable = true;
-        StringBuilder insufficientItemsMessage = new StringBuilder();
-
-        // Check if all items are available in sufficient quantity
-        for (var orderItem : orderCreatedEvent.getItems()) {
-            InventoryItem item = inventoryRepository.findById(orderItem.getProductId())
-                    .orElse(null);
-
-            if (item == null) {
-                allItemsAvailable = false;
-                insufficientItemsMessage.append("Product not found: ")
-                        .append(orderItem.getProductId()).append("; ");
-                continue;
-            }
-
-            if (item.getAvailableQuantity() < orderItem.getQuantity()) {
-                allItemsAvailable = false;
-                insufficientItemsMessage.append("Insufficient quantity for product: ")
-                        .append(orderItem.getProductId())
-                        .append(", requested: ").append(orderItem.getQuantity())
-                        .append(", available: ").append(item.getAvailableQuantity())
-                        .append("; ");
-                continue;
-            }
-
-            // Add to reservation items
-            reservationItems.add(InventoryReservation.ReservationItem.builder()
-                    .productId(orderItem.getProductId())
-                    .quantity(orderItem.getQuantity())
+        List<InventoryReservation.ReservationItem> reserved = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            InventoryItem item = items.get(i);
+            int quantity = event.getItems().get(i).getQuantity();
+            item.setAvailableQuantity(item.getAvailableQuantity() - quantity);
+            item.setReservedQuantity(item.getReservedQuantity() + quantity);
+            // @Version makes a concurrent change to the same item fail and be retried
+            inventoryRepository.save(item);
+            reserved.add(InventoryReservation.ReservationItem.builder()
+                    .productId(item.getId())
+                    .quantity(quantity)
                     .build());
         }
 
-        if (!allItemsAvailable) {
-            // Send failure event
-            InventoryReservationFailedEvent failedEvent = new InventoryReservationFailedEvent(
-                    orderCreatedEvent.getCorrelationId(),
-                    orderCreatedEvent.getOrderId(),
-                    orderCreatedEvent.getCustomerId(),
-                    insufficientItemsMessage.toString()
-            );
-
-            publish(orderCreatedEvent.getOrderId(), failedEvent);
-            log.warn("Inventory reservation failed: {}", insufficientItemsMessage);
-            return;
-        }
-
-        // Create reservation
-        InventoryReservation reservation = InventoryReservation.builder()
+        reservationRepository.save(InventoryReservation.builder()
                 .id(UUID.randomUUID())
-                .orderId(orderCreatedEvent.getOrderId())
-                .correlationId(orderCreatedEvent.getCorrelationId())
-                .items(reservationItems)
-                .status(InventoryReservation.ReservationStatus.PENDING)
+                .orderId(orderId)
+                .correlationId(event.getCorrelationId())
+                .items(reserved)
+                .status(ReservationStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
-                .build();
+                .build());
 
-        reservationRepository.save(reservation);
-
-        // Update inventory quantities
-        for (var reservationItem : reservationItems) {
-            InventoryItem item = inventoryRepository.findById(reservationItem.getProductId()).orElseThrow();
-            item.setAvailableQuantity(item.getAvailableQuantity() - reservationItem.getQuantity());
-            item.setReservedQuantity(item.getReservedQuantity() + reservationItem.getQuantity());
-            inventoryRepository.save(item);
-        }
-
-        // Send success event
-        InventoryReservedEvent reservedEvent = new InventoryReservedEvent(
-                orderCreatedEvent.getCorrelationId(),
-                orderCreatedEvent.getOrderId(),
-                orderCreatedEvent.getCustomerId(),
-                orderCreatedEvent.getTotalAmount()
-        );
-
-        publish(orderCreatedEvent.getOrderId(), reservedEvent);
-        log.info("Inventory successfully reserved for order: {}", orderCreatedEvent.getOrderId());
+        eventPublisher.publish(KafkaTopics.INVENTORY_EVENTS, orderId.toString(), new InventoryReservedEvent(
+                event.getCorrelationId(), orderId, event.getCustomerId(), event.getTotalAmount()));
+        log.info("Inventory reserved for order: {}", orderId);
     }
 
     @Override
     @Transactional
-    public void confirmReservation(UUID orderId) {
-        InventoryReservation reservation = reservationRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Reservation not found for order: " + orderId));
-
-        reservation.setStatus(InventoryReservation.ReservationStatus.CONFIRMED);
-        reservation.setUpdatedAt(LocalDateTime.now());
-        reservationRepository.save(reservation);
-
+    public void confirmReservation(BaseEvent cause, UUID orderId) {
+        if (!idempotencyGuard.firstDelivery(cause)) {
+            return;
+        }
+        Optional<InventoryReservation> pending = pendingReservation(orderId);
+        if (pending.isEmpty()) {
+            return;
+        }
+        InventoryReservation reservation = pending.get();
+        for (var reservationItem : reservation.getItems()) {
+            InventoryItem item = inventoryRepository.findById(reservationItem.getProductId()).orElseThrow();
+            item.setReservedQuantity(item.getReservedQuantity() - reservationItem.getQuantity());
+            inventoryRepository.save(item);
+        }
+        updateStatus(reservation, ReservationStatus.CONFIRMED);
         log.info("Reservation confirmed for order: {}", orderId);
     }
 
     @Override
     @Transactional
-    public void cancelReservation(UUID orderId) {
-        InventoryReservation reservation = reservationRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Reservation not found for order: " + orderId));
-
-        if (reservation.getStatus() == InventoryReservation.ReservationStatus.CANCELLED) {
-            log.info("Reservation for order {} already cancelled", orderId);
+    public void releaseReservation(BaseEvent cause, UUID orderId) {
+        if (!idempotencyGuard.firstDelivery(cause)) {
             return;
         }
-
-        // Return quantities back to available inventory
+        Optional<InventoryReservation> pending = pendingReservation(orderId);
+        if (pending.isEmpty()) {
+            return;
+        }
+        InventoryReservation reservation = pending.get();
         for (var reservationItem : reservation.getItems()) {
             InventoryItem item = inventoryRepository.findById(reservationItem.getProductId()).orElseThrow();
             item.setAvailableQuantity(item.getAvailableQuantity() + reservationItem.getQuantity());
             item.setReservedQuantity(item.getReservedQuantity() - reservationItem.getQuantity());
             inventoryRepository.save(item);
         }
-
-        reservation.setStatus(InventoryReservation.ReservationStatus.CANCELLED);
-        reservation.setUpdatedAt(LocalDateTime.now());
-        reservationRepository.save(reservation);
-
-        log.info("Reservation cancelled and inventory released for order: {}", orderId);
+        updateStatus(reservation, ReservationStatus.CANCELLED);
+        log.info("Reservation released for order: {}", orderId);
     }
 
-    private void publish(UUID orderId, Object event) {
-        kafkaTemplate.send(KafkaTopics.INVENTORY_EVENTS, orderId.toString(), event);
+    /** Only a PENDING reservation can be confirmed or released; anything else is already settled. */
+    private Optional<InventoryReservation> pendingReservation(UUID orderId) {
+        Optional<InventoryReservation> reservation = reservationRepository.findByOrderId(orderId);
+        if (reservation.isEmpty()) {
+            log.warn("No reservation for order {}", orderId);
+            return Optional.empty();
+        }
+        if (reservation.get().getStatus() != ReservationStatus.PENDING) {
+            log.info("Reservation for order {} already {}", orderId, reservation.get().getStatus());
+            return Optional.empty();
+        }
+        return reservation;
+    }
+
+    private void updateStatus(InventoryReservation reservation, ReservationStatus status) {
+        reservation.setStatus(status);
+        reservation.setUpdatedAt(LocalDateTime.now());
+        reservationRepository.save(reservation);
     }
 }

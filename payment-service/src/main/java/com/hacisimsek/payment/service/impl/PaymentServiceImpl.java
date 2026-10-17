@@ -1,16 +1,21 @@
 package com.hacisimsek.payment.service.impl;
 
+import com.hacisimsek.common.event.BaseEvent;
 import com.hacisimsek.common.event.inventory.InventoryReservedEvent;
 import com.hacisimsek.common.event.payment.PaymentFailedEvent;
 import com.hacisimsek.common.event.payment.PaymentProcessedEvent;
+import com.hacisimsek.common.event.payment.PaymentRefundedEvent;
+import com.hacisimsek.common.event.shipping.ShipmentFailedEvent;
 import com.hacisimsek.common.kafka.KafkaTopics;
+import com.hacisimsek.common.messaging.EventPublisher;
+import com.hacisimsek.common.messaging.IdempotencyGuard;
+import com.hacisimsek.common.web.ResourceNotFoundException;
 import com.hacisimsek.payment.model.Payment;
 import com.hacisimsek.payment.repository.PaymentRepository;
 import com.hacisimsek.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +30,8 @@ import java.util.concurrent.ThreadLocalRandom;
 public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final EventPublisher eventPublisher;
+    private final IdempotencyGuard idempotencyGuard;
 
     @Value("${payment.simulation.failure-rate:0.0}")
     private double failureRate;
@@ -36,13 +42,11 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public void processPayment(InventoryReservedEvent event) {
-        UUID orderId = event.getOrderId();
-        log.info("Processing payment of {} for order: {}", event.getTotalAmount(), orderId);
-
-        if (paymentRepository.findByOrderId(orderId).isPresent()) {
-            log.info("Payment for order {} already processed, skipping", orderId);
+        if (!idempotencyGuard.firstDelivery(event)) {
             return;
         }
+        UUID orderId = event.getOrderId();
+        log.info("Processing payment of {} for order: {}", event.getTotalAmount(), orderId);
 
         Payment payment = Payment.builder()
                 .orderId(orderId)
@@ -62,31 +66,46 @@ public class PaymentServiceImpl implements PaymentService {
             paymentRepository.save(payment);
 
             publish(orderId, new PaymentProcessedEvent(
-                    event.getCorrelationId(),
-                    orderId,
-                    event.getCustomerId(),
-                    payment.getId(),
-                    payment.getAmount()
-            ));
+                    event.getCorrelationId(), orderId, event.getCustomerId(), payment.getId(), payment.getAmount()));
             log.info("Payment successful for order: {}, transaction ID: {}", orderId, payment.getTransactionId());
         } else {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             paymentRepository.save(payment);
 
             publish(orderId, new PaymentFailedEvent(
-                    event.getCorrelationId(),
-                    orderId,
-                    event.getCustomerId(),
-                    failureReason
-            ));
+                    event.getCorrelationId(), orderId, event.getCustomerId(), failureReason));
             log.warn("Payment failed for order: {}, reason: {}", orderId, failureReason);
         }
     }
 
     @Override
+    @Transactional
+    public void refundPayment(ShipmentFailedEvent event) {
+        if (!idempotencyGuard.firstDelivery(event)) {
+            return;
+        }
+        UUID orderId = event.getOrderId();
+        Payment payment = paymentRepository.findByOrderId(orderId).orElse(null);
+        if (payment == null || payment.getStatus() != Payment.PaymentStatus.COMPLETED) {
+            log.warn("Nothing to refund for order {} (payment {})", orderId,
+                    payment == null ? "missing" : payment.getStatus());
+            return;
+        }
+
+        // A real provider call goes here; the fake provider always accepts refunds
+        payment.setStatus(Payment.PaymentStatus.REFUNDED);
+        paymentRepository.save(payment);
+
+        publish(orderId, new PaymentRefundedEvent(
+                event.getCorrelationId(), orderId, payment.getCustomerId(), payment.getId(), payment.getAmount()));
+        log.info("Refunded {} for order {} after shipping failure", payment.getAmount(), orderId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Payment getPaymentByOrderId(UUID orderId) {
         return paymentRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Payment not found for order: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Payment for order", orderId));
     }
 
     /**
@@ -103,8 +122,8 @@ public class PaymentServiceImpl implements PaymentService {
         return null;
     }
 
-    private void publish(UUID orderId, Object event) {
-        kafkaTemplate.send(KafkaTopics.PAYMENT_EVENTS, orderId.toString(), event);
+    private void publish(UUID orderId, BaseEvent event) {
+        eventPublisher.publish(KafkaTopics.PAYMENT_EVENTS, orderId.toString(), event);
     }
 
     private String generateTransactionId() {

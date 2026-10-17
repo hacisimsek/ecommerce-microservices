@@ -1,1 +1,4 @@
 com.hacisimsek.common.kafka.CommonKafkaAutoConfiguration
+com.hacisimsek.common.messaging.MessagingStoresAutoConfiguration
+com.hacisimsek.common.messaging.MessagingAutoConfiguration
+com.hacisimsek.common.web.WebErrorHandlingAutoConfiguration

@@ -119,19 +119,22 @@ Faz 0'da ek olarak: event'ler artık Kafka key'i (`orderId`) ile gönderiliyor, 
 
 > Not: Spring Boot 4.x yayında. 3.5 → 4.0 geçişi (Jakarta EE 11, Jackson 3, modüler starter'lar) ayrı bir iş olarak Faz 7'ye eklendi.
 
-### Faz 2 — Güvenilirlik ve Doğruluk (~3–4 gün)
+### Faz 2 — Güvenilirlik ve Doğruluk ✅ tamamlandı
 
-Saga'nın "demo" olmaktan çıkıp üretim kalitesine gelmesi.
+- [x] **Transactional Outbox** (order, payment, shipping: Postgres tablosu; inventory: Mongo koleksiyonu + replica set transaction). `OutboxRelay` broker onayından sonra siler; batch sırasını korur, `FOR UPDATE SKIP LOCKED` ile çoklu instance'a hazır. (İleri adım: Debezium CDC — Faz 7.)
+- [x] **Idempotent consumer:** `processed_events(event_id, consumer)` iş değişikliğiyle aynı transaction'da; ayrıca `payments.order_id` / `shipments.order_id` unique.
+- [x] Kafka mesaj key'i = `orderId`.
+- [x] `DefaultErrorHandler` + exponential backoff (0.5s→4s, 4 deneme) + **Dead Letter Topic** (`<topic>.DLT`, aynı partition, hata bilgisi header'larda); deserialize edilemeyen kayıtlar direkt DLT'ye.
+- [x] Eksiksiz kompanzasyon: shipping reddi → ödeme iadesi (`PaymentRefundedEvent`) + stok serbest + müşteri bildirimi; başarılı akışta rezervasyon `CONFIRMED` ve stok düşülüyor.
+- [x] Sipariş durumu yalnızca ileri gider; optimistic locking (`@Version`: `orders`, `InventoryItem`, `InventoryReservation`).
+- [x] Global `@RestControllerAdvice` + RFC 9457 `ProblemDetail`; `ResourceNotFoundException` (404), `BusinessRuleException` (409), alan bazlı validasyon hataları (400); 500'de iç detay sızmıyor.
+- [x] Smoke test: tüm kompanzasyon dalları, hata formatı, event replay'in etkisiz olduğu ve poison mesajın DLT'ye düştüğü doğrulanıyor.
 
-- [ ] **Transactional Outbox** (order, payment, shipping, inventory): event'ler aynı DB transaction'ında `outbox` tablosuna yazılır, ayrı bir publisher Kafka'ya basar. (İleri adım: Debezium CDC.)
-- [ ] **Idempotent consumer:** `processed_events(event_id)` tablosu / Mongo unique index; tekrar gelen event yok sayılır.
-- [ ] Kafka mesaj key'i = `orderId` (sıralama garantisi).
-- [ ] `DefaultErrorHandler` + exponential backoff + **Dead Letter Topic**; DLT için basit bir inceleme/yeniden oynatma endpoint'i.
-- [ ] Eksiksiz kompanzasyon: shipping fail → refund + stok serbest; başarılı akışta rezervasyon commit; sipariş iptali (kullanıcı) akışı.
-- [ ] Sipariş durum makinesi: geçersiz durum geçişlerini engelle (ör. `CANCELLED` → `SHIPPED`), optimistic locking (`@Version`).
-- [ ] Saga timeout: belirli süre ilerlemeyen siparişleri tespit edip iptal eden zamanlanmış görev.
-- [ ] Global `@RestControllerAdvice` + `ProblemDetail`; tüm DTO'larda Bean Validation; domain exception sınıfları.
-- [ ] Resilience4j (senkron çağrılar için circuit breaker/retry/timeout).
+Bilinçli olarak ertelenenler (gerekçeli):
+
+- **Kullanıcının sipariş iptali** ve **saga timeout**: choreography'de iptal, ödeme/kargo adımlarıyla yarışır (ör. iptalden sonra gelen `InventoryReservedEvent` ödemeyi tetikler). Doğru çözüm iptali her adımın tanıdığı bir event yapmak veya orkestrasyona geçmek; Faz 3 checkout ile birlikte ele alınacak, orkestrasyon karşılaştırması Faz 7'de.
+- **DLT yeniden oynatma endpoint'i**: şimdilik Kafka UI ile inceleme; admin paneli ile birlikte Faz 4'te.
+- **Resilience4j**: servisler arasında henüz senkron çağrı yok; checkout'ta katalog fiyat sorgusu geldiğinde (Faz 3) eklenecek.
 
 ### Faz 3 — E-ticaret Domain'ini Tamamla (~1–1.5 hafta)
 

@@ -1,7 +1,9 @@
 package com.hacisimsek.order.dto;
 
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,7 +18,7 @@ public class OrderItemRequest {
     @NotNull
     private UUID productId;
 
-    @NotNull
+    @NotBlank
     private String productName;
 
     @NotNull
@@ -24,5 +26,6 @@ public class OrderItemRequest {
     private Integer quantity;
 
     @NotNull
+    @Positive
     private BigDecimal price;
 }
