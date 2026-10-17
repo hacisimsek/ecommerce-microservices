@@ -3,6 +3,7 @@ package com.hacisimsek.shipping.service.impl;
 import com.hacisimsek.common.event.payment.PaymentProcessedEvent;
 import com.hacisimsek.common.event.shipping.ShipmentFailedEvent;
 import com.hacisimsek.common.event.shipping.ShipmentProcessedEvent;
+import com.hacisimsek.common.kafka.KafkaTopics;
 import com.hacisimsek.shipping.model.Shipment;
 import com.hacisimsek.shipping.repository.ShipmentRepository;
 import com.hacisimsek.shipping.service.ShippingService;
@@ -30,6 +31,10 @@ public class ShippingServiceImpl implements ShippingService {
     @Transactional
     public void processShipping(PaymentProcessedEvent paymentEvent) {
         log.info("Processing shipping for order: {}", paymentEvent.getOrderId());
+        if (shipmentRepository.findByOrderId(paymentEvent.getOrderId()).isPresent()) {
+            log.info("Shipment for order {} already exists, skipping", paymentEvent.getOrderId());
+            return;
+        }
 
         // In a real application, we would retrieve shipping address from order service
         // For this example, we'll create a shipment with minimal information
@@ -38,7 +43,7 @@ public class ShippingServiceImpl implements ShippingService {
             // Create the shipment record
             Shipment shipment = Shipment.builder()
                     .orderId(paymentEvent.getOrderId())
-                    .customerId(UUID.randomUUID()) // In a real app this would come from order
+                    .customerId(paymentEvent.getCustomerId())
                     .correlationId(paymentEvent.getCorrelationId())
                     .status(Shipment.ShipmentStatus.PROCESSING)
                     .carrierName(getRandomCarrier())
@@ -61,11 +66,12 @@ public class ShippingServiceImpl implements ShippingService {
             ShipmentProcessedEvent shipmentEvent = new ShipmentProcessedEvent(
                     paymentEvent.getCorrelationId(),
                     paymentEvent.getOrderId(),
+                    paymentEvent.getCustomerId(),
                     savedShipment.getId(),
                     savedShipment.getTrackingNumber()
             );
 
-            kafkaTemplate.send("shipping-events", shipmentEvent);
+            publish(paymentEvent.getOrderId(), shipmentEvent);
             log.info("Order shipped successfully. Order ID: {}, Tracking: {}",
                     paymentEvent.getOrderId(), savedShipment.getTrackingNumber());
 
@@ -76,10 +82,11 @@ public class ShippingServiceImpl implements ShippingService {
             ShipmentFailedEvent failedEvent = new ShipmentFailedEvent(
                     paymentEvent.getCorrelationId(),
                     paymentEvent.getOrderId(),
+                    paymentEvent.getCustomerId(),
                     "Failed to process shipment: " + e.getMessage()
             );
 
-            kafkaTemplate.send("shipping-events", failedEvent);
+            publish(paymentEvent.getOrderId(), failedEvent);
         }
     }
 
@@ -93,6 +100,10 @@ public class ShippingServiceImpl implements ShippingService {
     public Shipment getShipmentById(UUID shipmentId) {
         return shipmentRepository.findById(shipmentId)
                 .orElseThrow(() -> new RuntimeException("Shipment not found with ID: " + shipmentId));
+    }
+
+    private void publish(UUID orderId, Object event) {
+        kafkaTemplate.send(KafkaTopics.SHIPPING_EVENTS, orderId.toString(), event);
     }
 
     private String getRandomCarrier() {

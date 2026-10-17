@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +28,18 @@ public class NotificationServiceImpl implements NotificationService {
                 Notification.NotificationType.ORDER_CREATED
         );
 
+        sendNotification(notification);
+    }
+
+    @Override
+    public void sendOrderCancelledNotification(UUID orderId, UUID customerId, String reason) {
+        Notification notification = createNotification(
+                customerId,
+                orderId,
+                "Your order has been cancelled",
+                "We couldn't reserve the items in your order: " + reason,
+                Notification.NotificationType.ORDER_CANCELLED
+        );
         sendNotification(notification);
     }
 
@@ -90,8 +101,8 @@ public class NotificationServiceImpl implements NotificationService {
                 .message(message)
                 .type(type)
                 .status(Notification.NotificationStatus.PENDING)
-                .createdAt(LocalDateTime.parse("2025-05-24T16:33:57", DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-                .createdBy("simsekhaci")
+                .createdAt(LocalDateTime.now())
+                .createdBy("system")
                 .build();
     }
 

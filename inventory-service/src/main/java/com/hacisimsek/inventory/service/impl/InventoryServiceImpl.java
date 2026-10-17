@@ -3,6 +3,7 @@ package com.hacisimsek.inventory.service.impl;
 import com.hacisimsek.common.event.inventory.InventoryReservationFailedEvent;
 import com.hacisimsek.common.event.inventory.InventoryReservedEvent;
 import com.hacisimsek.common.event.order.OrderCreatedEvent;
+import com.hacisimsek.common.kafka.KafkaTopics;
 import com.hacisimsek.inventory.model.InventoryItem;
 import com.hacisimsek.inventory.model.InventoryReservation;
 import com.hacisimsek.inventory.repository.InventoryRepository;
@@ -33,6 +34,10 @@ public class InventoryServiceImpl implements InventoryService {
     @Transactional
     public void reserveInventory(OrderCreatedEvent orderCreatedEvent) {
         log.info("Processing inventory reservation for order: {}", orderCreatedEvent.getOrderId());
+        if (reservationRepository.findByOrderId(orderCreatedEvent.getOrderId()).isPresent()) {
+            log.info("Reservation for order {} already exists, skipping", orderCreatedEvent.getOrderId());
+            return;
+        }
 
         List<InventoryReservation.ReservationItem> reservationItems = new ArrayList<>();
         boolean allItemsAvailable = true;
@@ -72,11 +77,12 @@ public class InventoryServiceImpl implements InventoryService {
             InventoryReservationFailedEvent failedEvent = new InventoryReservationFailedEvent(
                     orderCreatedEvent.getCorrelationId(),
                     orderCreatedEvent.getOrderId(),
+                    orderCreatedEvent.getCustomerId(),
                     insufficientItemsMessage.toString()
             );
 
-            kafkaTemplate.send("inventory-events", failedEvent);
-            log.error("Inventory reservation failed: {}", insufficientItemsMessage);
+            publish(orderCreatedEvent.getOrderId(), failedEvent);
+            log.warn("Inventory reservation failed: {}", insufficientItemsMessage);
             return;
         }
 
@@ -86,9 +92,9 @@ public class InventoryServiceImpl implements InventoryService {
                 .orderId(orderCreatedEvent.getOrderId())
                 .correlationId(orderCreatedEvent.getCorrelationId())
                 .items(reservationItems)
-                .status(InventoryReservation.ReservationStatus.CONFIRMED)
-                .createdAt(LocalDateTime.parse("2025-05-24T13:39:46"))
-                .updatedAt(LocalDateTime.parse("2025-05-24T13:39:46"))
+                .status(InventoryReservation.ReservationStatus.PENDING)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         reservationRepository.save(reservation);
@@ -104,10 +110,12 @@ public class InventoryServiceImpl implements InventoryService {
         // Send success event
         InventoryReservedEvent reservedEvent = new InventoryReservedEvent(
                 orderCreatedEvent.getCorrelationId(),
-                orderCreatedEvent.getOrderId()
+                orderCreatedEvent.getOrderId(),
+                orderCreatedEvent.getCustomerId(),
+                orderCreatedEvent.getTotalAmount()
         );
 
-        kafkaTemplate.send("inventory-events", reservedEvent);
+        publish(orderCreatedEvent.getOrderId(), reservedEvent);
         log.info("Inventory successfully reserved for order: {}", orderCreatedEvent.getOrderId());
     }
 
@@ -148,5 +156,9 @@ public class InventoryServiceImpl implements InventoryService {
         reservationRepository.save(reservation);
 
         log.info("Reservation cancelled and inventory released for order: {}", orderId);
+    }
+
+    private void publish(UUID orderId, Object event) {
+        kafkaTemplate.send(KafkaTopics.INVENTORY_EVENTS, orderId.toString(), event);
     }
 }

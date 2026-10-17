@@ -13,6 +13,6 @@ public class MongoConfig {
 
     @Bean
     public AuditorAware<String> auditorProvider() {
-        return () -> Optional.of("simsekhacitekrar");
+        return () -> Optional.of("system");
     }
 }

@@ -38,8 +38,8 @@ public class Payment {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.parse("2025-05-24T13:39:46");
-        this.createdBy = "simsekhaciI";
+        this.createdAt = LocalDateTime.now();
+        this.createdBy = "system";
     }
 
     public enum PaymentStatus {

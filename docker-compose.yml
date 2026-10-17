@@ -1,0 +1,219 @@
+name: ecommerce
+
+x-service: &service
+  build:
+    context: .
+  restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        memory: 512m
+  depends_on: &service-deps
+    service-registry:
+      condition: service_started
+    kafka:
+      condition: service_healthy
+
+x-service-env: &service-env
+  EUREKA_URL: http://service-registry:8761/eureka/
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+services:
+  # ---------- Infrastructure ----------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_MULTIPLE_DATABASES: order_db,payment_db,shipping_db
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - ./scripts/create-multiple-postgres-dbs.sh:/docker-entrypoint-initdb.d/create-multiple-postgres-dbs.sh:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongodb:
+    image: mongo:7.0
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.1
+    ports:
+      - "${KAFKA_PORT:-29092}:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-29092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    profiles: ["tools"]
+    ports:
+      - "${KAFKA_UI_PORT:-8089}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---------- Platform ----------
+  service-registry:
+    build:
+      context: .
+      args:
+        SERVICE: service-registry
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    ports:
+      - "${EUREKA_PORT:-8761}:8761"
+
+  api-gateway:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: api-gateway
+    environment:
+      EUREKA_URL: http://service-registry:8761/eureka/
+    ports:
+      - "${GATEWAY_PORT:-8088}:8080"
+    depends_on:
+      service-registry:
+        condition: service_started
+
+  # ---------- Business services ----------
+  order-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: order-service
+    environment:
+      <<: *service-env
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      <<: *service-deps
+      postgres:
+        condition: service_healthy
+
+  inventory-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: inventory-service
+    environment:
+      <<: *service-env
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+    depends_on:
+      <<: *service-deps
+      mongodb:
+        condition: service_healthy
+
+  payment-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: payment-service
+    environment:
+      <<: *service-env
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.0}
+      PAYMENT_MAX_AMOUNT: ${PAYMENT_MAX_AMOUNT:-10000}
+    depends_on:
+      <<: *service-deps
+      postgres:
+        condition: service_healthy
+
+  shipping-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: shipping-service
+    environment:
+      <<: *service-env
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    depends_on:
+      <<: *service-deps
+      postgres:
+        condition: service_healthy
+
+  notification-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: notification-service
+    environment:
+      <<: *service-env
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      <<: *service-deps
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  mongo-data:
+  kafka-data:

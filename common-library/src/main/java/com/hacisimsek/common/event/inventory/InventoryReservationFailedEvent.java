@@ -14,11 +14,13 @@ import java.util.UUID;
 @NoArgsConstructor
 public class InventoryReservationFailedEvent extends BaseEvent {
     private UUID orderId;
+    private UUID customerId;
     private String reason;
 
-    public InventoryReservationFailedEvent(UUID correlationId, UUID orderId, String reason) {
+    public InventoryReservationFailedEvent(UUID correlationId, UUID orderId, UUID customerId, String reason) {
         super(correlationId);
         this.orderId = orderId;
+        this.customerId = customerId;
         this.reason = reason;
     }
 }

@@ -144,62 +144,92 @@ This project implements the Saga pattern using a choreography-based approach:
 
 If any step fails, the system executes compensation transactions to maintain consistency:
 
-- **Payment Failure**: Inventory service releases reserved inventory
-- **Shipping Failure**: Payment service refunds payment, Inventory service releases inventory
+- **Inventory Failure**: Order is marked `CANCELLED`, customer is notified
+- **Payment Failure**: Inventory service releases reserved inventory, order is marked `FAILED`
+- **Shipping Failure**: Order is marked `FAILED` *(refund + inventory release is planned, see [docs/ROADMAP.md](docs/ROADMAP.md) Phase 2)*
 - **Notification Service**: Informs the customer about transaction status (success/failure)
+
+Events are published with the order ID as the Kafka key and a type header, so each listener
+dispatches on the concrete event class (`@KafkaHandler`). Because events from different topics can
+arrive out of order, the order service only accepts forward status transitions.
 
 ## Project Structure
 
 ```
 ecommerce-microservices/
 ├── pom.xml                          # Parent POM
-├── common-library/                  # Shared code between services
+├── Dockerfile                       # Single multi-stage image build (--build-arg SERVICE=...)
+├── docker-compose.yml               # Full local stack: infrastructure + all services
+├── .env.example                     # Host ports and simulation knobs
+├── common-library/                  # Shared events, Kafka topics and Kafka defaults
 ├── service-registry/                # Eureka Service Discovery
 ├── api-gateway/                     # Spring Cloud Gateway
-├── order-service/                   # Order management
-├── inventory-service/               # Inventory management
-├── payment-service/                 # Payment processing
+├── order-service/                   # Order management, starts the saga
+├── inventory-service/               # Inventory management and reservations
+├── payment-service/                 # Payment processing (simulated provider)
 ├── notification-service/            # Notification handling
 ├── shipping-service/                # Shipping management
-└── docker-compose.yml               # Docker composition for all services
+├── scripts/                         # Postgres init + end-to-end smoke test
+└── docs/ROADMAP.md                  # Improvement plan
 ```
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Java 17
-- Maven 3.8+
-- Docker and Docker Compose
-- Kafka and ZooKeeper
-- PostgreSQL, MongoDB, Redis
+- Docker with Docker Compose v2 (about 4 GB of memory available to Docker)
+- Java 17+ only if you want to build or run services outside Docker (Maven comes via `./mvnw`)
 
-### Running the Application
+### Run everything with Docker (recommended)
 
-1. **Clone the repository**:
 ```bash
 git clone https://github.com/hacisimsek/ecommerce-microservices.git
 cd ecommerce-microservices
+cp .env.example .env        # optional: change host ports
+docker compose up -d --build
 ```
 
-2. **Build the project**:
+The first build takes a few minutes. Services register with Eureka within about a minute.
+
+| What | URL |
+|------|-----|
+| API Gateway | http://localhost:8088 |
+| Eureka dashboard | http://localhost:8761 |
+| Kafka UI (`docker compose --profile tools up -d`) | http://localhost:8089 |
+
+Host ports default to values that avoid other common local stacks (Postgres `5433`, Redis `6380`,
+Kafka `29092`); change them in `.env`.
+
+### Verify the saga end to end
+
 ```bash
-mvn clean package -DskipTests
+./scripts/smoke-test.sh
 ```
 
-3. **Start the infrastructure with Docker Compose**:
+It creates stock, places orders through the gateway and checks three flows: the happy path
+(`SHIPPED`, stock reserved, payment, shipment and notifications created), an out-of-stock order
+(`CANCELLED`) and a declined payment (`FAILED`, reservation released).
+
+### Run a service from the IDE
+
+Start the infrastructure only, then run any service with its defaults (they point at `localhost`):
+
 ```bash
-docker-compose up -d
+docker compose up -d postgres mongodb redis kafka service-registry
+./mvnw -pl order-service -am spring-boot:run
 ```
 
-4. **Check service health**:
-```bash
-# Access Eureka dashboard
-http://localhost:8761
+### Configuration
 
-# Check API Gateway
-http://localhost:8080/actuator/health
-```
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:29092` | all business services |
+| `EUREKA_URL` | `http://localhost:8761/eureka/` | all services |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5433` | order, payment, shipping |
+| `MONGO_HOST` / `MONGO_PORT` | `localhost` / `27017` | inventory, notification |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6380` | notification |
+| `PAYMENT_FAILURE_RATE` | `0.0` | payment: random decline probability |
+| `PAYMENT_MAX_AMOUNT` | `10000` | payment: orders above this are declined |
 
 ## API Documentation
 
@@ -275,25 +305,12 @@ GET /api/notifications/customer/{customerId}
 
 ## Testing
 
-### Unit Tests
 ```bash
-mvn test
+./mvnw verify               # unit tests
+./scripts/smoke-test.sh     # end-to-end saga against the running stack
 ```
 
-### Integration Tests
-```bash
-mvn verify -P integration-test
-```
-
-### End-to-End Testing
-Use Postman or curl to test the full order processing flow:
-
-1. Create an inventory item
-2. Create an order
-3. Check order status
-4. Verify payment creation
-5. Verify shipment creation
-6. Verify notifications
+Integration tests with Testcontainers are planned in [docs/ROADMAP.md](docs/ROADMAP.md) (Phase 5).
 
 ## Contributing
 

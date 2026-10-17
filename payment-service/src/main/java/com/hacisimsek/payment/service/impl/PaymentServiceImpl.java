@@ -3,19 +3,21 @@ package com.hacisimsek.payment.service.impl;
 import com.hacisimsek.common.event.inventory.InventoryReservedEvent;
 import com.hacisimsek.common.event.payment.PaymentFailedEvent;
 import com.hacisimsek.common.event.payment.PaymentProcessedEvent;
+import com.hacisimsek.common.kafka.KafkaTopics;
 import com.hacisimsek.payment.model.Payment;
 import com.hacisimsek.payment.repository.PaymentRepository;
 import com.hacisimsek.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @RequiredArgsConstructor
@@ -25,62 +27,59 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    @Value("${payment.simulation.failure-rate:0.0}")
+    private double failureRate;
+
+    @Value("${payment.simulation.max-amount:10000}")
+    private BigDecimal maxAmount;
+
     @Override
     @Transactional
     public void processPayment(InventoryReservedEvent event) {
-        log.info("Processing payment for order: {}", event.getOrderId());
-
-        // In a real application, we would call a payment gateway
-        // Here we'll simulate payment processing with random success/failure
-
-        // First, get the order details (in a real app this would come from a service call or the event)
-        // For this example we'll use hard-coded values
         UUID orderId = event.getOrderId();
-        UUID customerId = UUID.randomUUID(); // This would come from the order service in real app
-        BigDecimal amount = BigDecimal.valueOf(100); // This would come from the order service
+        log.info("Processing payment of {} for order: {}", event.getTotalAmount(), orderId);
 
-        // Create payment record
+        if (paymentRepository.findByOrderId(orderId).isPresent()) {
+            log.info("Payment for order {} already processed, skipping", orderId);
+            return;
+        }
+
         Payment payment = Payment.builder()
                 .orderId(orderId)
-                .customerId(customerId)
+                .customerId(event.getCustomerId())
                 .correlationId(event.getCorrelationId())
-                .amount(amount)
+                .amount(event.getTotalAmount())
                 .status(Payment.PaymentStatus.PENDING)
                 .paymentMethod("CREDIT_CARD")
                 .build();
 
-        // Simulate payment processing
-        boolean paymentSuccessful = simulatePaymentGateway();
+        String failureReason = simulatePaymentGateway(event.getTotalAmount());
 
-        if (paymentSuccessful) {
+        if (failureReason == null) {
             payment.setStatus(Payment.PaymentStatus.COMPLETED);
             payment.setPaymentDate(LocalDateTime.now());
             payment.setTransactionId(generateTransactionId());
             paymentRepository.save(payment);
 
-            // Send payment success event
-            PaymentProcessedEvent processedEvent = new PaymentProcessedEvent(
+            publish(orderId, new PaymentProcessedEvent(
                     event.getCorrelationId(),
                     orderId,
-                    payment.getId()
-            );
-
-            kafkaTemplate.send("payment-events", processedEvent);
-            log.info("Payment successful for order: {}, transaction ID: {}",
-                    orderId, payment.getTransactionId());
+                    event.getCustomerId(),
+                    payment.getId(),
+                    payment.getAmount()
+            ));
+            log.info("Payment successful for order: {}, transaction ID: {}", orderId, payment.getTransactionId());
         } else {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             paymentRepository.save(payment);
 
-            // Send payment failure event
-            PaymentFailedEvent failedEvent = new PaymentFailedEvent(
+            publish(orderId, new PaymentFailedEvent(
                     event.getCorrelationId(),
                     orderId,
-                    "Payment processing failed"
-            );
-
-            kafkaTemplate.send("payment-events", failedEvent);
-            log.error("Payment failed for order: {}", orderId);
+                    event.getCustomerId(),
+                    failureReason
+            ));
+            log.warn("Payment failed for order: {}, reason: {}", orderId, failureReason);
         }
     }
 
@@ -90,9 +89,22 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new RuntimeException("Payment not found for order: " + orderId));
     }
 
-    private boolean simulatePaymentGateway() {
-        // Simulate 90% success rate
-        return new Random().nextInt(10) < 9;
+    /**
+     * Stand-in for a real payment provider. Returns a failure reason, or null on success.
+     * Amounts above the limit always fail, which gives a deterministic way to exercise compensation.
+     */
+    private String simulatePaymentGateway(BigDecimal amount) {
+        if (amount.compareTo(maxAmount) > 0) {
+            return "Amount " + amount + " exceeds the limit of " + maxAmount;
+        }
+        if (ThreadLocalRandom.current().nextDouble() < failureRate) {
+            return "Payment declined by provider";
+        }
+        return null;
+    }
+
+    private void publish(UUID orderId, Object event) {
+        kafkaTemplate.send(KafkaTopics.PAYMENT_EVENTS, orderId.toString(), event);
     }
 
     private String generateTransactionId() {

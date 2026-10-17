@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public interface NotificationService {
     void sendOrderCreatedNotification(UUID orderId, UUID customerId);
+    void sendOrderCancelledNotification(UUID orderId, UUID customerId, String reason);
     void sendPaymentSuccessNotification(UUID orderId, UUID customerId);
     void sendPaymentFailedNotification(UUID orderId, UUID customerId);
     void sendOrderShippedNotification(UUID orderId, UUID customerId, String trackingNumber);

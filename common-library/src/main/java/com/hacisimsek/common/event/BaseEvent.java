@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Data
@@ -15,17 +15,11 @@ import java.util.UUID;
 public abstract class BaseEvent {
     private UUID eventId;
     private UUID correlationId; // For tracking a transaction across services
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
-    // Add metadata for created timestamp and user
-    private LocalDateTime createdAt;
-    private String createdBy;
-
-    public BaseEvent(UUID correlationId) {
+    protected BaseEvent(UUID correlationId) {
         this.eventId = UUID.randomUUID();
         this.correlationId = correlationId;
-        this.timestamp = LocalDateTime.now();
-        this.createdAt = LocalDateTime.parse("2025-05-24T13:39:46");
-        this.createdBy = "simsekhaciI";
+        this.timestamp = Instant.now();
     }
 }

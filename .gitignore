@@ -5,7 +5,7 @@
 *.ear
 
 # --- Build directories ---
-/target/
+target/
 /build/
 /out/
 
@@ -49,8 +49,7 @@ Thumbs.db
 
 # --- Environment files & local overrides ---
 .env
-application-*.yml
-application-*.properties
+application-local.yml
 
 # --- Keystores & sensitive files ---
 *.jks

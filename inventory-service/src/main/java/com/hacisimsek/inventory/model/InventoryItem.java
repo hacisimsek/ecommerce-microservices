@@ -36,10 +36,4 @@ public class InventoryItem {
     @LastModifiedDate
     private LocalDateTime updatedAt;
 
-    // Manually setting these since we're not using MongoAuditing in this example
-    @Builder.Default
-    private LocalDateTime creationTimestamp = LocalDateTime.parse("2025-05-26T17:49:38");
-
-    @Builder.Default
-    private String creator = "simsekhacitekrar";
 }
