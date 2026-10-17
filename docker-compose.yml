@@ -25,7 +25,8 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
-      POSTGRES_MULTIPLE_DATABASES: order_db,payment_db,shipping_db
+      POSTGRES_MULTIPLE_DATABASES: catalog_db,order_db,payment_db,shipping_db
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:?Set CATALOG_DB_PASSWORD in .env (see .env.example)}
       ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env (see .env.example)}
       PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?Set PAYMENT_DB_PASSWORD in .env (see .env.example)}
       SHIPPING_DB_PASSWORD: ${SHIPPING_DB_PASSWORD:?Set SHIPPING_DB_PASSWORD in .env (see .env.example)}
@@ -150,6 +151,40 @@ services:
         condition: service_started
 
   # ---------- Business services ----------
+  catalog-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: catalog-service
+    environment:
+      <<: *service-env
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      DB_USERNAME: catalog_svc
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+    depends_on:
+      <<: *service-deps
+      postgres:
+        condition: service_healthy
+
+  cart-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: cart-service
+    environment:
+      EUREKA_URL: http://service-registry:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      service-registry:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
   order-service:
     <<: *service
     build:

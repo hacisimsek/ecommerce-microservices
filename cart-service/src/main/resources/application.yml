@@ -1,0 +1,35 @@
+# Shared defaults (Eureka, actuator, circuit breaker, virtual threads) come from
+# common-library/src/main/resources/shared-defaults.yml; anything here overrides them.
+server:
+  port: 8087
+
+spring:
+  application:
+    name: cart-service
+  # The cart talks to other services over HTTP only; it neither produces nor consumes Kafka events
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      - com.hacisimsek.common.kafka.CommonKafkaAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD}
+
+cart:
+  # Carts expire after this long without changes
+  ttl: 30d
+  max-quantity-per-item: 99
+
+resilience4j:
+  timelimiter:
+    instances:
+      order-service:
+        timeout-duration: 6s
+  circuitbreaker:
+    instances:
+      # A rejected order (e.g. product no longer sold) is a normal answer, not a sign of an unhealthy service
+      order-service:
+        ignore-exceptions:
+          - com.hacisimsek.common.web.BusinessRuleException

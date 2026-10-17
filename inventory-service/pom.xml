@@ -10,10 +10,6 @@
 	<artifactId>inventory-service</artifactId>
 	<name>inventory-service</name>
 	<description>inventory-service</description>
-
-	<properties>
-		<java.version>17</java.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>com.hacisimsek</groupId>

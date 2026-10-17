@@ -10,10 +10,6 @@
 	<artifactId>service-registry</artifactId>
 	<name>service-registry</name>
 	<description>service-registry</description>
-
-	<properties>
-		<java.version>17</java.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>

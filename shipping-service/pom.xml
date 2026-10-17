@@ -10,10 +10,6 @@
     <artifactId>shipping-service</artifactId>
     <name>shipping-service</name>
     <description>shipping-service</description>
-
-    <properties>
-        <java.version>17</java.version>
-    </properties>
     <dependencies>
         <dependency>
             <groupId>com.hacisimsek</groupId>

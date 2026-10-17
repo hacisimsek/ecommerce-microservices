@@ -1,0 +1,17 @@
+# Shared defaults (Kafka, Eureka, actuator, JPA, virtual threads) come from
+# common-library/src/main/resources/shared-defaults.yml; anything here overrides them.
+server:
+  port: 8086
+
+spring:
+  application:
+    name: catalog-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/catalog_db
+    # No defaults for credentials: provide them via environment (see .env.example)
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  data:
+    web:
+      pageable:
+        max-page-size: 100

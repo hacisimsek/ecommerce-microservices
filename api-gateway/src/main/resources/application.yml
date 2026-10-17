@@ -9,6 +9,14 @@ spring:
       server:
         webflux:
           routes:
+            - id: catalog-service
+              uri: lb://catalog-service
+              predicates:
+                - Path=/api/catalog/**
+            - id: cart-service
+              uri: lb://cart-service
+              predicates:
+                - Path=/api/carts/**
             - id: order-service
               uri: lb://order-service
               predicates:

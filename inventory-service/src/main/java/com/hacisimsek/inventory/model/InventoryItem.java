@@ -25,6 +25,7 @@ public class InventoryItem {
 
     @Version
     private Long version;
+    private String sku;
     private String name;
     private String description;
     private Integer availableQuantity;

@@ -37,6 +37,9 @@ public class Order {
     @Version
     private Long version;
 
+    /** Client-supplied key; a repeated create request with the same key returns this order. */
+    private String idempotencyKey;
+
     private LocalDateTime createdAt;
     private String createdBy;
     private LocalDateTime lastModifiedAt;

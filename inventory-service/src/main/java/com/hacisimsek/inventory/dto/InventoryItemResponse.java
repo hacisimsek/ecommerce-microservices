@@ -13,6 +13,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InventoryItemResponse {
     private UUID id;
+    private String sku;
     private String name;
     private String description;
     private Integer availableQuantity;

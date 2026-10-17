@@ -1,10 +1,13 @@
 package com.hacisimsek.inventory.saga;
 
+import com.hacisimsek.common.event.catalog.ProductCreatedEvent;
+import com.hacisimsek.common.event.catalog.ProductUpdatedEvent;
 import com.hacisimsek.common.event.order.OrderCreatedEvent;
 import com.hacisimsek.common.event.payment.PaymentFailedEvent;
 import com.hacisimsek.common.event.shipping.ShipmentFailedEvent;
 import com.hacisimsek.common.event.shipping.ShipmentProcessedEvent;
 import com.hacisimsek.common.kafka.KafkaTopics;
+import com.hacisimsek.inventory.service.InventoryItemService;
 import com.hacisimsek.inventory.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,10 +19,21 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 @KafkaListener(groupId = "inventory-service-group",
-        topics = {KafkaTopics.ORDER_EVENTS, KafkaTopics.PAYMENT_EVENTS, KafkaTopics.SHIPPING_EVENTS})
+        topics = {KafkaTopics.CATALOG_EVENTS, KafkaTopics.ORDER_EVENTS, KafkaTopics.PAYMENT_EVENTS, KafkaTopics.SHIPPING_EVENTS})
 public class InventorySagaHandler {
 
     private final InventoryService inventoryService;
+    private final InventoryItemService inventoryItemService;
+
+    @KafkaHandler
+    public void on(ProductCreatedEvent event) {
+        inventoryItemService.createFromCatalog(event);
+    }
+
+    @KafkaHandler
+    public void on(ProductUpdatedEvent event) {
+        inventoryItemService.updateFromCatalog(event);
+    }
 
     @KafkaHandler
     public void on(OrderCreatedEvent event) {

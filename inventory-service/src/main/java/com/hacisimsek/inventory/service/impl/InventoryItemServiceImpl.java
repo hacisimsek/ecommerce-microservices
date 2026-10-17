@@ -1,7 +1,9 @@
 package com.hacisimsek.inventory.service.impl;
 
+import com.hacisimsek.common.event.catalog.ProductCreatedEvent;
+import com.hacisimsek.common.event.catalog.ProductUpdatedEvent;
+import com.hacisimsek.common.messaging.IdempotencyGuard;
 import com.hacisimsek.common.web.ResourceNotFoundException;
-import com.hacisimsek.inventory.dto.InventoryItemRequest;
 import com.hacisimsek.inventory.model.InventoryItem;
 import com.hacisimsek.inventory.repository.InventoryRepository;
 import com.hacisimsek.inventory.service.InventoryItemService;
@@ -19,20 +21,35 @@ import java.util.UUID;
 public class InventoryItemServiceImpl implements InventoryItemService {
 
     private final InventoryRepository inventoryRepository;
+    private final IdempotencyGuard idempotencyGuard;
 
     @Override
     @Transactional
-    public InventoryItem createInventoryItem(InventoryItemRequest request) {
-        InventoryItem item = InventoryItem.builder()
-                .id(UUID.randomUUID())
-                .name(request.getName())
-                .description(request.getDescription())
-                .availableQuantity(request.getQuantity())
+    public void createFromCatalog(ProductCreatedEvent event) {
+        if (!idempotencyGuard.firstDelivery(event) || inventoryRepository.existsById(event.getProductId())) {
+            return;
+        }
+        inventoryRepository.save(InventoryItem.builder()
+                .id(event.getProductId())
+                .sku(event.getSku())
+                .name(event.getName())
+                .availableQuantity(0)
                 .reservedQuantity(0)
-                .build();
+                .build());
+        log.info("Created stock record for product {} ({})", event.getSku(), event.getProductId());
+    }
 
-        log.info("Creating new inventory item: {}", item.getName());
-        return inventoryRepository.save(item);
+    @Override
+    @Transactional
+    public void updateFromCatalog(ProductUpdatedEvent event) {
+        if (!idempotencyGuard.firstDelivery(event)) {
+            return;
+        }
+        inventoryRepository.findById(event.getProductId()).ifPresent(item -> {
+            item.setSku(event.getSku());
+            item.setName(event.getName());
+            inventoryRepository.save(item);
+        });
     }
 
     @Override
@@ -48,34 +65,17 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Override
     @Transactional
-    public InventoryItem updateInventoryItem(UUID id, InventoryItemRequest request) {
-        InventoryItem existingItem = getInventoryItemById(id);
-
-        existingItem.setName(request.getName());
-        existingItem.setDescription(request.getDescription());
-        existingItem.setAvailableQuantity(request.getQuantity());
-
-        log.info("Updating inventory item: {}", existingItem.getId());
-        return inventoryRepository.save(existingItem);
-    }
-
-    @Override
-    @Transactional
-    public void deleteInventoryItem(UUID id) {
+    public InventoryItem setAvailableQuantity(UUID id, int availableQuantity) {
         InventoryItem item = getInventoryItemById(id);
-        log.info("Deleting inventory item: {}", id);
-        inventoryRepository.delete(item);
+        item.setAvailableQuantity(availableQuantity);
+        log.info("Set available stock of {} to {}", id, availableQuantity);
+        return inventoryRepository.save(item);
     }
 
     @Override
     public boolean checkAvailability(UUID productId, Integer quantity) {
-        InventoryItem item = inventoryRepository.findById(productId)
-                .orElse(null);
-
-        if (item == null) {
-            return false;
-        }
-
-        return item.getAvailableQuantity() >= quantity;
+        return inventoryRepository.findById(productId)
+                .map(item -> item.getAvailableQuantity() >= quantity)
+                .orElse(false);
     }
 }

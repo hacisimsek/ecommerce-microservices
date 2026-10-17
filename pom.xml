@@ -27,6 +27,8 @@
 		<module>common-library</module>
 		<module>service-registry</module>
 		<module>api-gateway</module>
+		<module>catalog-service</module>
+		<module>cart-service</module>
 		<module>order-service</module>
 		<module>inventory-service</module>
 		<module>payment-service</module>
