@@ -11,7 +11,7 @@ import com.hacisimsek.order.repository.OrderRepository;
 import com.hacisimsek.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -50,7 +50,8 @@ public class OrderServiceImpl implements OrderService {
         Order order = Order.builder()
                 .customerId(orderRequest.getCustomerId())
                 .totalAmount(totalAmount)
-                .status(Order.OrderStatus.PENDING)
+                // The saga starts as soon as the order is committed
+                .status(Order.OrderStatus.INVENTORY_CHECKING)
                 .items(orderItems)
                 .build();
 
@@ -73,14 +74,8 @@ public class OrderServiceImpl implements OrderService {
                 savedOrder.getTotalAmount()
         );
 
-        log.info("Sending OrderCreatedEvent for order {}", savedOrder.getId());
-
-        // Update order status to indicate saga started
-        savedOrder.setStatus(Order.OrderStatus.INVENTORY_CHECKING);
-        orderRepository.save(savedOrder);
-
-        // Publish event to Kafka
-        kafkaTemplate.send("order-events", event);
+        // Delivered to Kafka by OrderEventPublisher once this transaction commits
+        eventPublisher.publishEvent(event);
 
         return mapToOrderResponse(savedOrder);
     }
@@ -111,9 +106,13 @@ public class OrderServiceImpl implements OrderService {
     public void updateOrderStatus(UUID orderId, Order.OrderStatus status) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+        if (!order.getStatus().canTransitionTo(status)) {
+            log.warn("Ignoring status change {} -> {} for order {}", order.getStatus(), status, orderId);
+            return;
+        }
+        log.info("Updating order {} status {} -> {}", orderId, order.getStatus(), status);
         order.setStatus(status);
         orderRepository.save(order);
-        log.info("Updated order {} status to {}", orderId, status);
     }
 
     private OrderResponse mapToOrderResponse(Order order) {

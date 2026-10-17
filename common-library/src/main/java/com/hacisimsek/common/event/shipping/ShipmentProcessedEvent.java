@@ -14,12 +14,14 @@ import java.util.UUID;
 @NoArgsConstructor
 public class ShipmentProcessedEvent extends BaseEvent {
     private UUID orderId;
+    private UUID customerId;
     private UUID shipmentId;
     private String trackingNumber;
 
-    public ShipmentProcessedEvent(UUID correlationId, UUID orderId, UUID shipmentId, String trackingNumber) {
+    public ShipmentProcessedEvent(UUID correlationId, UUID orderId, UUID customerId, UUID shipmentId, String trackingNumber) {
         super(correlationId);
         this.orderId = orderId;
+        this.customerId = customerId;
         this.shipmentId = shipmentId;
         this.trackingNumber = trackingNumber;
     }

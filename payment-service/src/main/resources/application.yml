@@ -4,27 +4,37 @@ server:
 spring:
   application:
     name: payment-service
+  config:
+    import: classpath:common-kafka.yml
   datasource:
-    url: jdbc:postgresql://postgres:5432/payment_db
-    username: postgres
-    password: postgres
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/payment_db
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  kafka:
-    bootstrap-servers: kafka:9092
-    consumer:
-      auto-offset-reset: earliest
+    open-in-view: false
 
 eureka:
   client:
     service-url:
-      defaultZone: http://service-registry:8761/eureka/
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+payment:
+  simulation:
+    # Probability that the fake provider declines a payment (0.0 - 1.0)
+    failure-rate: ${PAYMENT_FAILURE_RATE:0.0}
+    # Orders above this amount are always declined, to exercise compensation deterministically
+    max-amount: ${PAYMENT_MAX_AMOUNT:10000}

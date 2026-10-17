@@ -29,7 +29,7 @@ public class Notification {
     private LocalDateTime sentAt;
 
     public enum NotificationType {
-        ORDER_CREATED, ORDER_CONFIRMED, PAYMENT_SUCCEEDED, PAYMENT_FAILED, ORDER_SHIPPED, ORDER_DELIVERED
+        ORDER_CREATED, ORDER_CONFIRMED, ORDER_CANCELLED, PAYMENT_SUCCEEDED, PAYMENT_FAILED, ORDER_SHIPPED, ORDER_DELIVERED
     }
 
     public enum NotificationStatus {

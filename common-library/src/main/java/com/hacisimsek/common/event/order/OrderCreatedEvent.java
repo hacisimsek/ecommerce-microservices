@@ -21,8 +21,7 @@ public class OrderCreatedEvent extends BaseEvent {
     private List<OrderItemDto> items;
     private BigDecimal totalAmount;
 
-    public OrderCreatedEvent(UUID correlationId, UUID orderId, UUID customerId,
-                             List<OrderItemDto> items, BigDecimal totalAmount) {
+    public OrderCreatedEvent(UUID correlationId, UUID orderId, UUID customerId, List<OrderItemDto> items, BigDecimal totalAmount) {
         super(correlationId);
         this.orderId = orderId;
         this.customerId = customerId;

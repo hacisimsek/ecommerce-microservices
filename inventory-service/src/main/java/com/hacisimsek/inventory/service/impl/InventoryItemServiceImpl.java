@@ -9,8 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,8 +18,6 @@ import java.util.UUID;
 public class InventoryItemServiceImpl implements InventoryItemService {
 
     private final InventoryRepository inventoryRepository;
-    private final String username = "simsekhaci";
-    private final LocalDateTime timestamp = LocalDateTime.parse("2025-05-24T16:45:26", DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 
     @Override
     @Transactional

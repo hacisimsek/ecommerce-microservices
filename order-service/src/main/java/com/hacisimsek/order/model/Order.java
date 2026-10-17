@@ -18,6 +18,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
+
+    private static final String SYSTEM_USER = "system";
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -39,16 +41,16 @@ public class Order {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.parse("2025-05-24T13:39:46");
-        this.lastModifiedAt = LocalDateTime.parse("2025-05-24T13:39:46");
-        this.createdBy = "simsekhaciI";
-        this.lastModifiedBy = "simsekhaciI";
+        this.createdAt = LocalDateTime.now();
+        this.lastModifiedAt = this.createdAt;
+        this.createdBy = SYSTEM_USER;
+        this.lastModifiedBy = SYSTEM_USER;
     }
 
     @PreUpdate
     protected void onUpdate() {
         this.lastModifiedAt = LocalDateTime.now();
-        this.lastModifiedBy = "simsekhaciI";
+        this.lastModifiedBy = SYSTEM_USER;
     }
 
     public enum OrderStatus {
@@ -61,6 +63,24 @@ public class Order {
         SHIPPED,
         COMPLETED,
         CANCELLED,
-        FAILED
+        FAILED;
+
+        public boolean isTerminal() {
+            return this == COMPLETED || this == CANCELLED || this == FAILED;
+        }
+
+        /**
+         * Saga events arrive on different topics, so they can be consumed out of order.
+         * Only forward moves (or a move to a failure state) are accepted, and terminal states are final.
+         */
+        public boolean canTransitionTo(OrderStatus next) {
+            if (isTerminal()) {
+                return false;
+            }
+            if (next == CANCELLED || next == FAILED) {
+                return true;
+            }
+            return next.ordinal() > ordinal();
+        }
     }
 }

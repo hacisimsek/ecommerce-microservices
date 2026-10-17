@@ -43,16 +43,16 @@ public class Shipment {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.parse("2025-05-24T16:33:57");
-        this.lastModifiedAt = LocalDateTime.parse("2025-05-24T16:33:57");
-        this.createdBy = "simsekhaci";
-        this.lastModifiedBy = "simsekhaci";
+        this.createdAt = LocalDateTime.now();
+        this.lastModifiedAt = this.createdAt;
+        this.createdBy = "system";
+        this.lastModifiedBy = "system";
     }
 
     @PreUpdate
     protected void onUpdate() {
         this.lastModifiedAt = LocalDateTime.now();
-        this.lastModifiedBy = "simsekhaci";
+        this.lastModifiedBy = "system";
     }
 
     public enum ShipmentStatus {
