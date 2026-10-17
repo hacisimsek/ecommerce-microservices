@@ -14,7 +14,7 @@ import org.springframework.util.backoff.FixedBackOff;
 
 /**
  * Kafka defaults shared by every service: saga topics and a bounded-retry error handler.
- * Serializer settings live in {@code common-kafka.yml}, imported by each service.
+ * Serializer settings live in {@code shared-defaults.yml}.
  */
 @Slf4j
 @AutoConfiguration

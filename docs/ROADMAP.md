@@ -107,13 +107,17 @@ Faz 0'da ek olarak: event'ler artık Kafka key'i (`orderId`) ile gönderiliyor, 
 
 **Kabul kriteri:** Temiz klon → `docker compose up -d --build` → ürün stoğu ekle → sipariş oluştur → sipariş `SHIPPED`/`COMPLETED` olur, bildirim kaydı oluşur.
 
-### Faz 1 — Platform Upgrade (~1 gün)
+### Faz 1 — Platform Upgrade ✅ tamamlandı
 
-- [ ] Java 21, Spring Boot 3.5.x, Spring Cloud 2025.0.x; `spring.threads.virtual.enabled=true`.
-- [ ] Bağımlılık versiyonlarını root `dependencyManagement`'ta topla (Lombok, MapStruct, Testcontainers BOM).
-- [ ] Flyway ile şema yönetimi; `ddl-auto: validate`.
-- [ ] Sırlar env değişkenlerinden; `.env.example`.
-- [ ] Spotless/Checkstyle + `maven-enforcer`.
+- [x] Java 21, Spring Boot 3.5.16, Spring Cloud 2025.0.3; `spring.threads.virtual.enabled=true`.
+- [x] Versiyonlar Boot BOM'dan; Boot'un yönettiği sürümleri ezen `spring-kafka.version` / `lombok.version` override'ları kaldırıldı. Lombok için açık `annotationProcessorPaths`.
+- [x] Flyway ile şema yönetimi (order, payment, shipping `V1`); `ddl-auto: validate`. `payments.order_id` ve `shipments.order_id` unique (idempotency'yi DB seviyesinde de garanti eder).
+- [x] Sırlar env değişkenlerinden; uygulama config'inde varsayılan şifre yok, compose `.env` olmadan başlamıyor. Her servis için ayrı Postgres rolü (`order_svc` yalnızca `order_db`'ye bağlanabilir); MongoDB ve Redis kimlik doğrulamalı.
+- [x] Ortak ayarlar `shared-defaults.yml` ile en düşük öncelikte yükleniyor (servisler istediğini ezebilir).
+- [x] Spotless (import sırası, kullanılmayan import, whitespace) + `maven-enforcer` (Java 21+, Maven 3.9+, plugin sürümleri).
+- [x] Gateway `spring-cloud-starter-gateway-server-webflux` ve yeni `spring.cloud.gateway.server.webflux.*` property'lerine taşındı.
+
+> Not: Spring Boot 4.x yayında. 3.5 → 4.0 geçişi (Jakarta EE 11, Jackson 3, modüler starter'lar) ayrı bir iş olarak Faz 7'ye eklendi.
 
 ### Faz 2 — Güvenilirlik ve Doğruluk (~3–4 gün)
 
@@ -162,6 +166,7 @@ Saga'nın "demo" olmaktan çıkıp üretim kalitesine gelmesi.
 
 ### Faz 7 — İleri Teknik Konular (sonraki iyileştirme turu)
 
+- Spring Boot 4.x / Spring Cloud 2025.1 geçişi
 - Orkestrasyon tabanlı saga (order-service'te state machine / Temporal) ve choreography ile karşılaştırma
 - Avro/Protobuf + Schema Registry, event versiyonlama
 - CQRS: sipariş okuma modeli, Elasticsearch/OpenSearch ile ürün arama

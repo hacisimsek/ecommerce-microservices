@@ -38,6 +38,18 @@ wait_for_status() { # orderId expectedStatus
 
 echo "Gateway: $GATEWAY"
 
+# Right after startup the gateway answers 503 until its service-discovery cache has every route
+printf '  waiting for gateway routes'
+for _ in $(seq 1 90); do
+  ready=true
+  for path in inventory orders; do
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY/api/$path")" = 200 ] || ready=false
+  done
+  $ready && break
+  printf '.'; sleep 1
+done
+$ready && echo " ok" || fail "gateway routes not ready after 90s"
+
 echo "1) Happy path"
 product=$(create_product "Mechanical keyboard" 10)
 order=$(place_order "$product" 2 49.90)

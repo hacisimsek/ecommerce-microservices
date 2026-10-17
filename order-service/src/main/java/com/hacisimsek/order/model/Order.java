@@ -31,7 +31,7 @@ public class Order {
     private OrderStatus status;
 
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JoinColumn(name = "order_id")
+    @JoinColumn(name = "order_id", nullable = false)
     private List<OrderItem> items;
 
     private LocalDateTime createdAt;

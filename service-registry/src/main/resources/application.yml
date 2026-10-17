@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: service-registry
+  threads:
+    virtual:
+      enabled: true
   output:
     ansi:
       enabled: always

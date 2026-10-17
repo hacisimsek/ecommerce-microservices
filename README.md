@@ -1,14 +1,12 @@
 # E-commerce Microservices with Saga Pattern
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![Java](https://img.shields.io/badge/Java-17-orange.svg)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.12-green.svg)
-![Last Updated](https://img.shields.io/badge/last%20updated-2025--05--26-brightgreen.svg)
+![Java](https://img.shields.io/badge/Java-21-orange.svg)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.16-green.svg)
 
 A professional implementation of an e-commerce system using microservice architecture with Saga pattern for distributed transaction management.
 
-*Created by: hacisimsek*  
-*Last Updated: 2025-05-26 18:40:03*
+*Created by: hacisimsek*
 
 ## Table of Contents
 
@@ -99,9 +97,10 @@ graph TD
 
 ## Technologies
 
-- **Java 17**: Core programming language
-- **Spring Boot 3.2.12**: Application framework
-- **Spring Cloud**: Microservices toolkit
+- **Java 21** (virtual threads enabled): Core programming language
+- **Spring Boot 3.5**: Application framework
+- **Spring Cloud 2025.0**: Gateway (WebFlux) and Eureka
+- **Flyway**: Versioned database migrations (Hibernate only validates the schema)
 - **Apache Kafka**: Event streaming platform for service communication
 - **Databases**:
     - **PostgreSQL**: For Order, Payment, and Shipping services
@@ -178,14 +177,14 @@ ecommerce-microservices/
 ### Prerequisites
 
 - Docker with Docker Compose v2 (about 4 GB of memory available to Docker)
-- Java 17+ only if you want to build or run services outside Docker (Maven comes via `./mvnw`)
+- Java 21+ only if you want to build or run services outside Docker (Maven comes via `./mvnw`)
 
 ### Run everything with Docker (recommended)
 
 ```bash
 git clone https://github.com/hacisimsek/ecommerce-microservices.git
 cd ecommerce-microservices
-cp .env.example .env        # optional: change host ports
+cp .env.example .env        # required: credentials and host ports
 docker compose up -d --build
 ```
 
@@ -196,6 +195,12 @@ The first build takes a few minutes. Services register with Eureka within about 
 | API Gateway | http://localhost:8088 |
 | Eureka dashboard | http://localhost:8761 |
 | Kafka UI (`docker compose --profile tools up -d`) | http://localhost:8089 |
+
+Compose refuses to start without the credentials from `.env`. The values in `.env.example`
+are for local development only.
+
+> **Upgrading from an earlier checkout?** The database schema is now owned by Flyway and every
+> store requires credentials, so recreate the volumes once: `docker compose down -v`.
 
 Host ports default to values that avoid other common local stacks (Postgres `5433`, Redis `6380`,
 Kafka `29092`); change them in `.env`.
@@ -216,20 +221,33 @@ Start the infrastructure only, then run any service with its defaults (they poin
 
 ```bash
 docker compose up -d postgres mongodb redis kafka service-registry
-./mvnw -pl order-service -am spring-boot:run
+set -a; source .env; set +a
+DB_USERNAME=order_svc DB_PASSWORD=$ORDER_DB_PASSWORD ./mvnw -pl order-service -am spring-boot:run
 ```
 
 ### Configuration
+
+Shared defaults (Kafka serialization, Eureka, actuator, JPA, virtual threads) live in
+`common-library/src/main/resources/shared-defaults.yml` and are loaded with the lowest
+precedence, so a service's `application.yml` or an environment variable always wins.
 
 | Variable | Default | Used by |
 |----------|---------|---------|
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:29092` | all business services |
 | `EUREKA_URL` | `http://localhost:8761/eureka/` | all services |
 | `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5433` | order, payment, shipping |
+| `DB_USERNAME` / `DB_PASSWORD` | *(required)* | order, payment, shipping: each has its own role (`order_svc`, ...) owning only its database |
 | `MONGO_HOST` / `MONGO_PORT` | `localhost` / `27017` | inventory, notification |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6380` | notification |
+| `MONGO_USERNAME` / `MONGO_PASSWORD` | *(required)* | inventory, notification |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6380` / *(required)* | notification |
 | `PAYMENT_FAILURE_RATE` | `0.0` | payment: random decline probability |
 | `PAYMENT_MAX_AMOUNT` | `10000` | payment: orders above this are declined |
+
+### Database migrations
+
+Schema changes go in `<service>/src/main/resources/db/migration` as `V<n>__<description>.sql`.
+Flyway applies them on startup; `ddl-auto: validate` makes the service fail fast if an entity
+and the schema disagree.
 
 ## API Documentation
 
@@ -306,7 +324,8 @@ GET /api/notifications/customer/{customerId}
 ## Testing
 
 ```bash
-./mvnw verify               # unit tests
+./mvnw verify               # unit tests + enforcer + formatting check
+./mvnw spotless:apply       # fix import order / whitespace
 ./scripts/smoke-test.sh     # end-to-end saga against the running stack
 ```
 
