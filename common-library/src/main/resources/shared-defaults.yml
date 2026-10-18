@@ -28,6 +28,21 @@ spring:
         # The producer's __TypeId__ header selects the concrete event class
         spring.json.trusted.packages: com.hacisimsek.common.event.*
 
+# Synchronous calls (e.g. catalog lookups) through Spring Cloud CircuitBreaker: give up after
+# 3s, open the circuit when half of the last 20 calls failed, probe again after 10s
+resilience4j:
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 3s
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+
 eureka:
   client:
     service-url:

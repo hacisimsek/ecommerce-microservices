@@ -12,10 +12,6 @@
 	<artifactId>common-library</artifactId>
 	<name>common-library</name>
 	<description>common-library</description>
-
-	<properties>
-		<java.version>17</java.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -51,6 +47,17 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<!-- Optional: services that call the catalog synchronously (order, cart) -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-loadbalancer</artifactId>
 			<optional>true</optional>
 		</dependency>
 		<dependency>

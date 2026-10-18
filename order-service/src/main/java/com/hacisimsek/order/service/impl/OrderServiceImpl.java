@@ -1,12 +1,17 @@
 package com.hacisimsek.order.service.impl;
 
+import com.hacisimsek.common.client.catalog.CatalogClient;
+import com.hacisimsek.common.client.catalog.CatalogProduct;
 import com.hacisimsek.common.dto.OrderItemDto;
 import com.hacisimsek.common.event.BaseEvent;
 import com.hacisimsek.common.event.order.OrderCreatedEvent;
 import com.hacisimsek.common.kafka.KafkaTopics;
 import com.hacisimsek.common.messaging.EventPublisher;
 import com.hacisimsek.common.messaging.IdempotencyGuard;
+import com.hacisimsek.common.web.BusinessRuleException;
 import com.hacisimsek.common.web.ResourceNotFoundException;
+import com.hacisimsek.order.dto.OrderCreation;
+import com.hacisimsek.order.dto.OrderItemRequest;
 import com.hacisimsek.order.dto.OrderItemResponse;
 import com.hacisimsek.order.dto.OrderRequest;
 import com.hacisimsek.order.dto.OrderResponse;
@@ -18,9 +23,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,57 +41,79 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final EventPublisher eventPublisher;
     private final IdempotencyGuard idempotencyGuard;
+    private final CatalogClient catalogClient;
+    private final TransactionTemplate transactionTemplate;
 
     @Override
-    @Transactional
-    public OrderResponse createOrder(OrderRequest orderRequest) {
-        // Convert order items from request
-        List<OrderItem> orderItems = orderRequest.getItems().stream()
-                .map(item -> OrderItem.builder()
-                        .productId(item.getProductId())
-                        .productName(item.getProductName())
-                        .quantity(item.getQuantity())
-                        .price(item.getPrice())
-                        .build())
-                .collect(Collectors.toList());
+    public OrderCreation createOrder(OrderRequest orderRequest, String idempotencyKey) {
+        if (idempotencyKey != null) {
+            Optional<Order> existing = orderRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                log.info("Idempotent replay of order {} (key {})", existing.get().getId(), idempotencyKey);
+                return new OrderCreation(mapToOrderResponse(existing.get()), true);
+            }
+        }
 
-        // Calculate total amount
+        // Remote call outside the transaction: no database connection is held while waiting on the catalog
+        List<OrderItem> orderItems = priceItems(orderRequest.getItems());
+
+        Order savedOrder = transactionTemplate.execute(status -> persistAndStartSaga(
+                orderRequest.getCustomerId(), orderItems, idempotencyKey));
+        return new OrderCreation(mapToOrderResponse(savedOrder), false);
+    }
+
+    /** Merges repeated products and takes name and unit price from the catalog. */
+    private List<OrderItem> priceItems(List<OrderItemRequest> requested) {
+        Map<UUID, Integer> quantities = requested.stream()
+                .collect(Collectors.toMap(OrderItemRequest::getProductId, OrderItemRequest::getQuantity,
+                        Integer::sum, LinkedHashMap::new));
+        Map<UUID, CatalogProduct> products = catalogClient.findProducts(quantities.keySet());
+
+        List<String> unavailable = quantities.keySet().stream()
+                .filter(id -> products.get(id) == null || !products.get(id).active())
+                .map(UUID::toString)
+                .toList();
+        if (!unavailable.isEmpty()) {
+            throw new BusinessRuleException("Products not available: " + String.join(", ", unavailable));
+        }
+
+        return quantities.entrySet().stream()
+                .map(e -> {
+                    CatalogProduct product = products.get(e.getKey());
+                    return OrderItem.builder()
+                            .productId(product.id())
+                            .productName(product.name())
+                            .quantity(e.getValue())
+                            .price(product.price())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    private Order persistAndStartSaga(UUID customerId, List<OrderItem> orderItems, String idempotencyKey) {
         BigDecimal totalAmount = orderItems.stream()
                 .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Create and save order
-        Order order = Order.builder()
-                .customerId(orderRequest.getCustomerId())
+        Order savedOrder = orderRepository.save(Order.builder()
+                .customerId(customerId)
                 .totalAmount(totalAmount)
                 // The saga starts as soon as the order is committed
                 .status(Order.OrderStatus.INVENTORY_CHECKING)
                 .items(orderItems)
-                .build();
+                .idempotencyKey(idempotencyKey)
+                .build());
 
-        Order savedOrder = orderRepository.save(order);
-
-        // Start the saga by sending OrderCreatedEvent
-        UUID correlationId = UUID.randomUUID();
         List<OrderItemDto> itemDtos = savedOrder.getItems().stream()
-                .map(item -> new OrderItemDto(
-                        item.getProductId(),
-                        item.getQuantity(),
-                        item.getPrice()))
+                .map(item -> new OrderItemDto(item.getProductId(), item.getQuantity(), item.getPrice()))
                 .collect(Collectors.toList());
-
-        OrderCreatedEvent event = new OrderCreatedEvent(
-                correlationId,
-                savedOrder.getId(),
-                savedOrder.getCustomerId(),
-                itemDtos,
-                savedOrder.getTotalAmount()
-        );
+        OrderCreatedEvent event = new OrderCreatedEvent(UUID.randomUUID(), savedOrder.getId(),
+                savedOrder.getCustomerId(), itemDtos, savedOrder.getTotalAmount());
 
         // Written to the outbox in this transaction; the relay delivers it to Kafka after commit
         eventPublisher.publish(KafkaTopics.ORDER_EVENTS, savedOrder.getId().toString(), event);
-
-        return mapToOrderResponse(savedOrder);
+        log.info("Created order {} for customer {} totalling {}", savedOrder.getId(), customerId, totalAmount);
+        return savedOrder;
     }
 
     @Override

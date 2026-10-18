@@ -27,73 +27,51 @@ This project implements a robust e-commerce system using a microservices archite
 
 ## Architecture
 
-The architecture follows the microservices pattern with the following components:
-
 ```mermaid
 graph TD
-    Client[Client Applications] --> ApiGateway[API Gateway]
-    ApiGateway --> OrderService[Order Service]
-    ApiGateway --> InventoryService[Inventory Service]
-    ApiGateway --> PaymentService[Payment Service]
-    ApiGateway --> ShippingService[Shipping Service]
-    ApiGateway --> NotificationService[Notification Service]
-    
-    OrderService -- Events --> Kafka[Kafka]
-    InventoryService -- Events --> Kafka
-    PaymentService -- Events --> Kafka
-    ShippingService -- Events --> Kafka
-    NotificationService -- Events --> Kafka
-    
-    Kafka -- Events --> OrderService
-    Kafka -- Events --> InventoryService
-    Kafka -- Events --> PaymentService
-    Kafka -- Events --> ShippingService
-    Kafka -- Events --> NotificationService
-    
-    OrderService --> OrderDB[(PostgreSQL)]
-    InventoryService --> InventoryDB[(MongoDB)]
-    PaymentService --> PaymentDB[(PostgreSQL)]
-    ShippingService --> ShippingDB[(PostgreSQL)]
-    NotificationService --> NotificationDB[(MongoDB)]
-    NotificationService --> Redis[(Redis)]
-    
-    ServiceRegistry[Service Registry] --> OrderService
-    ServiceRegistry --> InventoryService
-    ServiceRegistry --> PaymentService
-    ServiceRegistry --> ShippingService
-    ServiceRegistry --> NotificationService
+    Client[Client] --> GW[API Gateway]
+    GW --> CAT[catalog-service]
+    GW --> CART[cart-service]
+    GW --> ORD[order-service]
+    GW --> INV[inventory-service]
+    GW --> PAY[payment-service]
+    GW --> SHP[shipping-service]
+    GW --> NOT[notification-service]
+
+    CART -- "HTTP: prices (circuit breaker)" --> CAT
+    CART -- "HTTP: checkout (Idempotency-Key)" --> ORD
+    ORD -- "HTTP: prices (circuit breaker)" --> CAT
+
+    CAT -- ProductCreated / ProductUpdated --> K[(Kafka)]
+    ORD & INV & PAY & SHP <-- saga events --> K
+    K --> NOT
+
+    CAT --> CDB[(PostgreSQL)]
+    ORD --> ODB[(PostgreSQL)]
+    PAY --> PDB[(PostgreSQL)]
+    SHP --> SDB[(PostgreSQL)]
+    INV --> IDB[(MongoDB)]
+    NOT --> NDB[(MongoDB)]
+    CART --> R[(Redis)]
+
+    REG[Eureka] -.-> GW
 ```
+
+Synchronous calls are used only where the caller needs an answer now (prices at checkout);
+everything else flows through Kafka events via the transactional outbox.
 
 ## Microservices
 
-1. **Order Service**:
-    - Manages order creation and lifecycle
-    - Initiates the order saga process
-    - Tracks order status throughout the saga
-
-2. **Inventory Service**:
-    - Manages product inventory
-    - Handles inventory reservation during order processing
-    - Provides inventory availability checks
-
-3. **Payment Service**:
-    - Processes customer payments
-    - Manages payment refunds for compensation transactions
-    - Tracks payment status
-
-4. **Shipping Service**:
-    - Creates shipments for orders
-    - Generates tracking information
-    - Manages delivery status
-
-5. **Notification Service**:
-    - Sends notifications to customers
-    - Supports multiple notification channels
-    - Tracks notification delivery status
-
-6. **Infrastructure Services**:
-    - **Service Registry**: Service discovery with Eureka
-    - **API Gateway**: Routing and cross-cutting concerns
+| Service | Store | Responsibility |
+|---------|-------|----------------|
+| **catalog-service** | PostgreSQL | Categories, products, prices — the single source of truth for what is sold and for how much. Publishes `ProductCreated/Updated`. |
+| **cart-service** | Redis | Per-customer carts with a 30-day TTL. Shows current catalog prices (falls back to the last known ones if the catalog is down). Checkout hands the cart to order-service. |
+| **order-service** | PostgreSQL | Prices orders from the catalog, starts the saga, tracks order status. Supports `Idempotency-Key`. |
+| **inventory-service** | MongoDB | One stock record per catalog product (created from catalog events); reserves, confirms and releases stock. |
+| **payment-service** | PostgreSQL | Charges and refunds (simulated provider). |
+| **shipping-service** | PostgreSQL | Creates shipments and tracking numbers (simulated carrier). |
+| **notification-service** | MongoDB | Records customer notifications for each saga outcome. |
+| **api-gateway** / **service-registry** | — | Spring Cloud Gateway routing; Eureka discovery. |
 
 ## Technologies
 
@@ -179,6 +157,8 @@ ecommerce-microservices/
 ├── common-library/                  # Shared events, outbox, idempotency, DLT and error handling
 ├── service-registry/                # Eureka Service Discovery
 ├── api-gateway/                     # Spring Cloud Gateway
+├── catalog-service/                 # Categories, products and prices
+├── cart-service/                    # Redis carts and checkout
 ├── order-service/                   # Order management, starts the saga
 ├── inventory-service/               # Inventory management and reservations
 ├── payment-service/                 # Payment processing (simulated provider)
@@ -202,6 +182,7 @@ git clone https://github.com/hacisimsek/ecommerce-microservices.git
 cd ecommerce-microservices
 cp .env.example .env        # required: credentials and host ports
 docker compose up -d --build
+./scripts/seed-demo-stock.sh   # once the services are up: stock for the demo catalog
 ```
 
 The first build takes a few minutes. Services register with Eureka within about a minute.
@@ -227,8 +208,8 @@ Kafka `29092`); change them in `.env`.
 ./scripts/smoke-test.sh
 ```
 
-It creates stock and places orders through the gateway, then checks the happy path, each
-compensation branch (out of stock, payment declined, shipping rejected), the problem-detail error
+It creates catalog products and stock, shops through cart and checkout, and checks the happy path,
+server-side pricing, checkout idempotency, cart price refresh, each compensation branch (out of stock, payment declined, shipping rejected), the problem-detail error
 format, that a replayed Kafka event is ignored, and that a poison message lands on the DLT.
 
 ### Run a service from the IDE
@@ -251,11 +232,11 @@ precedence, so a service's `application.yml` or an environment variable always w
 |----------|---------|---------|
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:29092` | all business services |
 | `EUREKA_URL` | `http://localhost:8761/eureka/` | all services |
-| `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5433` | order, payment, shipping |
-| `DB_USERNAME` / `DB_PASSWORD` | *(required)* | order, payment, shipping: each has its own role (`order_svc`, ...) owning only its database |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | `localhost` / `5433` | catalog, order, payment, shipping |
+| `DB_USERNAME` / `DB_PASSWORD` | *(required)* | catalog, order, payment, shipping: each has its own role (`catalog_svc`, `order_svc`, ...) owning only its database |
 | `MONGO_HOST` / `MONGO_PORT` | `localhost` / `27017` | inventory, notification |
 | `MONGO_USERNAME` / `MONGO_PASSWORD` | *(required)* | inventory, notification |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6380` / *(required)* | notification |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6380` / *(required)* | cart, notification |
 | `PAYMENT_FAILURE_RATE` | `0.0` | payment: random decline probability |
 | `PAYMENT_MAX_AMOUNT` | `10000` | payment: orders above this are declined |
 | `SHIPPING_MAX_INSURED_VALUE` | `5000` | shipping: orders above this cannot be shipped |
@@ -268,25 +249,55 @@ and the schema disagree.
 
 ## API Documentation
 
+### Catalog
+
+```
+GET  /api/catalog/categories
+POST /api/catalog/categories                 {"name", "slug", "description"}
+GET  /api/catalog/products?q=&categoryId=&page=0&size=20&sort=price,asc
+GET  /api/catalog/products/{id}
+GET  /api/catalog/products/lookup?ids=a,b    batch lookup used by other services
+POST /api/catalog/products                   {"sku", "name", "description", "price", "imageUrl", "categoryId"}
+PUT  /api/catalog/products/{id}              same body, plus "active": false to stop selling
+```
+
+A demo catalog (4 categories, 12 products) is created on first start. New products start with zero
+stock; give the demo catalog some with `./scripts/seed-demo-stock.sh` (default 25 each).
+
+### Cart and checkout
+
+```
+GET    /api/carts/{customerId}
+POST   /api/carts/{customerId}/items               {"productId", "quantity"}
+PUT    /api/carts/{customerId}/items/{productId}   {"quantity"}   (0 removes the line)
+DELETE /api/carts/{customerId}/items/{productId}
+DELETE /api/carts/{customerId}
+POST   /api/carts/{customerId}/checkout            -> 201 {"orderId", "status", "totalAmount"}
+```
+
+Checkout sends the cart's revision as `Idempotency-Key`, so a retried checkout returns the same
+order. The cart is emptied only once the order exists. Until authentication lands, the customer id
+is part of the URL; it will come from the access token instead.
+
 ### Order Service
 
 #### Create an Order
 ```
 POST /api/orders
 Content-Type: application/json
+Idempotency-Key: 6c1f...        (optional; a repeat returns the original order with 200)
 
 {
   "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "items": [
-    {
-      "productId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "productName": "Smartphone",
-      "quantity": 1,
-      "price": 799.99
-    }
+    { "productId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "quantity": 1 }
   ]
 }
 ```
+
+Names and prices are taken from the catalog; any price a client sends is ignored. Unknown or
+inactive products are rejected with `409`; if the catalog is unreachable the answer is a
+retryable `503`.
 
 #### Get Order by ID
 ```
@@ -300,20 +311,10 @@ GET /api/orders/customer/{customerId}
 
 ### Inventory Service
 
-#### Create Inventory Item
 ```
-POST /api/inventory
-Content-Type: application/json
-
-{
-  "name": "Smartphone",
-  "description": "Latest smartphone model",
-  "quantity": 100
-}
-```
-
-#### Check Product Availability
-```
+GET /api/inventory
+GET /api/inventory/{productId}
+PUT /api/inventory/{productId}/stock      {"availableQuantity": 25}
 GET /api/inventory/check?productId={productId}&quantity={quantity}
 ```
 

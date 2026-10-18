@@ -10,10 +10,6 @@
 	<artifactId>api-gateway</artifactId>
 	<name>api-gateway</name>
 	<description>api-gateway</description>
-
-	<properties>
-		<java.version>17</java.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>

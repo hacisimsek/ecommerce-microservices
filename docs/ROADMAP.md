@@ -136,15 +136,24 @@ Bilinçli olarak ertelenenler (gerekçeli):
 - **DLT yeniden oynatma endpoint'i**: şimdilik Kafka UI ile inceleme; admin paneli ile birlikte Faz 4'te.
 - **Resilience4j**: servisler arasında henüz senkron çağrı yok; checkout'ta katalog fiyat sorgusu geldiğinde (Faz 3) eklenecek.
 
-### Faz 3 — E-ticaret Domain'ini Tamamla (~1–1.5 hafta)
+### Faz 3 — E-ticaret Domain'ini Tamamla (devam ediyor)
 
-- [ ] **catalog-service:** ürün, kategori, fiyat, görsel URL, sayfalama/filtreleme; fiyat değişimi event'i. Inventory ile `productId`/SKU üzerinden bağlanır.
-- [ ] **cart-service (Redis):** sepete ekle/çıkar, TTL'li misafir sepeti, giriş sonrası birleştirme.
-- [ ] **Checkout:** order-service fiyatı istemciden değil katalogdan alır; adres + kargo seçimi; sipariş numarası (insan okunur, ör. `ORD-2026-000123`).
-- [ ] **Kimlik (Keycloak):** realm export'u compose'a dahil; gateway'de JWT doğrulama; `ROLE_CUSTOMER` / `ROLE_ADMIN`; servislerde resource server; kullanıcı yalnızca kendi siparişlerini görür.
-- [ ] **Ödeme:** `PaymentProvider` arayüzü + `FakeProvider` (testler için deterministik) + Stripe test mode veya iyzico sandbox; webhook ile asenkron onay; iade.
+**3a — Katalog, sepet, checkout ✅**
+
+- [x] **catalog-service** (Postgres): kategori, ürün (SKU, fiyat, görsel, aktif/pasif), arama + kategori filtresi + sayfalama/sıralama, toplu `lookup` endpoint'i. `ProductCreated/Updated` event'leri outbox ile; demo katalog (4 kategori, 12 ürün) Flyway seed'i, event'leriyle birlikte.
+- [x] **Inventory katalogla bağlı:** her ürün için stok kaydı `ProductCreatedEvent`'ten (id = productId) oluşur; stok `PUT /api/inventory/{id}/stock` ile ayarlanır. Serbest `POST /api/inventory` kaldırıldı.
+- [x] **cart-service (Redis):** müşteri başına sepet, 30 gün TTL, satır başına adet limiti; her okumada güncel katalog fiyatı, katalog yoksa son bilinen fiyat + `pricesStale`; pasif ürün eklenemez.
+- [x] **Checkout:** sepet → order-service; fiyat ve ürün adı **yalnızca katalogdan** (istemcinin gönderdiği fiyat yok sayılır); `Idempotency-Key` (sepet revizyonu) ile tekrar denenen checkout aynı siparişi döner; sipariş oluşmadan sepet silinmez. Katalog çağrısı DB transaction'ı dışında.
+- [x] **Resilience4j** (Spring Cloud CircuitBreaker): katalog ve sipariş çağrılarında circuit breaker + time limiter; erişilemeyen bağımlılık → `503` + `retryable: true` ProblemDetail.
+- [x] Modüllerdeki eski `<java.version>17` override'ları kaldırıldı (artık gerçekten Java 21 hedefleniyor).
+
+**3b — Sırada**
+
+- [ ] **Kimlik (Keycloak):** realm export'u compose'a dahil; gateway'de JWT doğrulama; `ROLE_CUSTOMER` / `ROLE_ADMIN`; müşteri id'si URL yerine token'dan; katalog yazma işlemleri yalnızca admin; misafir sepeti → giriş sonrası birleştirme.
+- [ ] **Checkout ayrıntıları:** teslimat adresi, kargo seçeneği, insan okunur sipariş numarası (`ORD-2026-000123`); kullanıcı iptali + saga timeout (Faz 2'den ertelenen).
+- [ ] **Ödeme:** `PaymentProvider` arayüzü + deterministik `FakeProvider` + Stripe test mode veya iyzico sandbox; webhook ile asenkron onay; iade.
 - [ ] **Bildirim:** şablonlu e-posta (Thymeleaf) + lokal SMTP için Mailpit.
-- [ ] Seed data: örnek kategoriler/ürünler/stok, demo kullanıcılar.
+- [ ] Demo kullanıcılar (Keycloak ile).
 
 ### Faz 4 — Arayüz (~1 hafta)
 
